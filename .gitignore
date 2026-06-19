@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build output
+dist/
+dist-ssr/
+build/
+coverage/
+*.tsbuildinfo
+
+# Environment variables and secrets
+.env
+.env.*
+*.env
+!.env.example
+!.env.sample
+
+# Keys, certificates, and credential files
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.jks
+id_rsa
+id_rsa.*
+credentials.json
+service-account*.json
+firebase-service-account*.json
+
+# Local databases and dumps
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.bak
+*.backup
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime/cache files
+.cache/
+.parcel-cache/
+.vite/
+.eslintcache
+tmp/
+temp/
+
+# Editor and OS files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Optional private local data. Uncomment if these should not be public.
+server/data/
+*.csv
