@@ -41,6 +41,13 @@ export const getOverallProgress = (sections, progress) => {
   };
 };
 
+export const getProgressBySection = (sections, progress) => {
+  return sections.reduce((summary, section) => {
+    summary[section.id] = getSectionProgress(section, progress).percent;
+    return summary;
+  }, {});
+};
+
 export const toggleProgressItem = (sectionId, itemId) => {
   const progress = getProgress();
   const sectionProgress = progress[sectionId] || {};

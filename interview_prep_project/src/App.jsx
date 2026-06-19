@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import SectionPage from './pages/SectionPage';
+import InterviewHistory from './pages/InterviewHistory';
+import WeaknessAnalytics from './pages/WeaknessAnalytics';
 import { apiUrl, readApiResponse } from './api';
 import './App.css';
 
@@ -94,6 +96,9 @@ function App() {
             {!isAuthenticated && <a href="/register">Register</a>}
             {isAuthenticated && (
               <>
+                <Link to="/dashboard">Dashboard</Link>
+                <Link to="/history">History</Link>
+                <Link to="/analytics">Analytics</Link>
                 <span className="student-name">{profile?.name || 'Student'}</span>
                 <button className="btn btn-secondary" type="button" onClick={() => setAccountOpen((open) => !open)}>
                   Account
@@ -177,6 +182,14 @@ function App() {
               <Route
                 path="/sections/:slug"
                 element={isAuthenticated ? <SectionPage /> : <Navigate to="/login" />}
+              />
+              <Route
+                path="/history"
+                element={isAuthenticated ? <InterviewHistory /> : <Navigate to="/login" />}
+              />
+              <Route
+                path="/analytics"
+                element={isAuthenticated ? <WeaknessAnalytics /> : <Navigate to="/login" />}
               />
             </Routes>
           </main>

@@ -1978,3 +1978,256 @@ textarea:disabled {
     height: calc(100vh - 8.6rem);
   }
 }
+
+.dashboard-feature-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.2rem 0 0;
+}
+
+.feature-link-card,
+.history-session,
+.analytics-panel,
+.weak-area-card,
+.subject-analytics-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--soft-shadow);
+}
+
+.feature-link-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1.15rem;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.feature-link-card:hover {
+  border-color: #a9c7f5;
+  transform: translateY(-2px);
+}
+
+.feature-link-card h3,
+.weak-area-card h3,
+.subject-analytics-row h3,
+.history-session h2,
+.history-question h3 {
+  letter-spacing: 0;
+}
+
+.feature-link-card p,
+.weak-area-card p,
+.subject-analytics-row p,
+.history-session p,
+.history-question p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.history-page,
+.analytics-page {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 1.5rem 0 3rem;
+}
+
+.history-list,
+.subject-analytics-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.history-session {
+  overflow: hidden;
+}
+
+.history-session-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem;
+  background: #ffffff;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  text-align: left;
+  box-shadow: none;
+}
+
+.history-session-header:hover {
+  background: #f8fbff;
+}
+
+.history-score,
+.weak-area-score,
+.rating-pill {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  min-width: 4.5rem;
+  min-height: 4.5rem;
+  padding: 0.45rem;
+  background: #edf7f0;
+  border: 1px solid #b9e2c4;
+  border-radius: 8px;
+  color: var(--success);
+  font-weight: 800;
+}
+
+.history-score strong,
+.weak-area-score span {
+  font-size: 1.8rem;
+}
+
+.history-question-list {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0 1.1rem 1.1rem;
+}
+
+.history-question {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.history-answer {
+  padding: 0.8rem;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text) !important;
+  white-space: pre-wrap;
+}
+
+.inline-empty {
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.analytics-panel {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.2rem;
+  padding: 1.2rem;
+}
+
+.weak-area-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.weak-area-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  box-shadow: none;
+}
+
+.weak-area-card.weak {
+  border-color: #fecaca;
+}
+
+.weak-area-card.practice {
+  border-color: #fde68a;
+}
+
+.weak-area-card.strong {
+  border-color: #bbf7d0;
+}
+
+.analytics-metric {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.analytics-metric > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.subject-analytics-row {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1fr) minmax(16rem, 2fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+  box-shadow: none;
+}
+
+.subject-bars {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.rating-pill {
+  min-width: 3.5rem;
+  min-height: 3.5rem;
+  font-size: 1.35rem;
+}
+
+.weak-area-card.weak .weak-area-score,
+.rating-pill.weak {
+  background: #fff1f2;
+  border-color: #fecaca;
+  color: #be123c;
+}
+
+.weak-area-card.practice .weak-area-score,
+.rating-pill.practice {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #a16207;
+}
+
+.weak-area-card.strong .weak-area-score,
+.rating-pill.strong {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: var(--success);
+}
+
+@media (max-width: 900px) {
+  .weak-area-grid,
+  .dashboard-feature-strip,
+  .subject-analytics-row {
+    grid-template-columns: 1fr;
+  }
+
+  .rating-pill {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 640px) {
+  .history-page,
+  .analytics-page {
+    width: calc(100% - 1.5rem);
+    padding-top: 1rem;
+  }
+
+  .history-session-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .history-score,
+  .weak-area-score {
+    min-width: 3.8rem;
+    min-height: 3.8rem;
+  }
+}

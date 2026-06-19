@@ -348,6 +348,62 @@ const getCurrentQuestion = (session) => {
   };
 };
 
+const parseJsonArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const SUBJECT_ANALYTICS = {
+  DSA: { label: 'Data Structures and Algorithms', sheetKey: 'DSA' },
+  OS: { label: 'Operating Systems', sheetKey: 'OS' },
+  DBMS: { label: 'Database Management Systems', sheetKey: 'DBMS' },
+  OOP: { label: 'Object Oriented Programming', sheetKey: 'OOP' }
+};
+
+const TOPIC_ANALYTICS = [
+  {
+    topic: 'Graphs',
+    subject: 'DSA',
+    sheetKey: 'DSA',
+    keywords: ['graph', 'bfs', 'dfs', 'cycle', 'shortest', 'queue', 'stack']
+  },
+  {
+    topic: 'Deadlocks',
+    subject: 'OS',
+    sheetKey: 'OS',
+    keywords: ['deadlock', 'mutual', 'hold', 'wait', 'preemption', 'circular']
+  },
+  {
+    topic: 'Normalization',
+    subject: 'DBMS',
+    sheetKey: 'DBMS',
+    keywords: ['normalization', '3nf', 'dependency', 'redundancy', 'anomaly']
+  }
+];
+
+const toPercent = (score) => Math.max(0, Math.min(100, Number(score) || 0));
+
+const getSheetPercent = (sheetProgress, key) => {
+  const value = sheetProgress?.[key];
+  if (typeof value === 'number') return toPercent(value);
+  if (value && typeof value.percent === 'number') return toPercent(value.percent);
+  return 0;
+};
+
+const buildRating = ({ interviewScore, sheetScore }) => {
+  if (interviewScore === null && sheetScore === null) return 0;
+  if (interviewScore === null) return Math.round(sheetScore);
+  if (sheetScore === null) return Math.round(interviewScore);
+  return Math.round((interviewScore * 0.65) + (sheetScore * 0.35));
+};
+
 router.post('/start', authMiddleware, async (req, res) => {
   const level = LEVELS.includes(req.body.level) ? req.body.level : null;
   const counts = {};
@@ -367,10 +423,6 @@ router.post('/start', authMiddleware, async (req, res) => {
   }
 
   try {
-    const interviewResult = await pool.query(
-      'INSERT INTO interviews (user_id, type) VALUES ($1, $2) RETURNING id',
-      [req.user.id, 'Mixed']
-    );
     let questions = null;
 
     try {
@@ -383,13 +435,68 @@ router.post('/start', authMiddleware, async (req, res) => {
       questions = buildLocalQuestions({ level, counts });
     }
 
+    const orderedQuestions = shuffle(questions);
+    const client = await pool.connect();
+    let sessionId;
+    let interviewId;
+    let persistedQuestions;
+
+    try {
+      await client.query('BEGIN');
+
+      const interviewResult = await client.query(
+        'INSERT INTO interviews (user_id, type) VALUES ($1, $2) RETURNING id',
+        [req.user.id, 'Mixed']
+      );
+      interviewId = interviewResult.rows[0].id;
+
+      const sessionResult = await client.query(
+        `INSERT INTO interview_sessions (user_id, interview_id, type, level, total_questions)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [req.user.id, interviewId, 'Mixed', level, orderedQuestions.length]
+      );
+      sessionId = sessionResult.rows[0].id;
+
+      persistedQuestions = await Promise.all(orderedQuestions.map(async (question, index) => {
+        const questionResult = await client.query(
+          `INSERT INTO interview_questions
+            (session_id, subject, subject_label, question_text, level, position, keywords)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id`,
+          [
+            sessionId,
+            question.subject,
+            question.subjectLabel,
+            question.questionText,
+            question.level,
+            index + 1,
+            JSON.stringify(question.keywords || [])
+          ]
+        );
+
+        return {
+          ...question,
+          dbQuestionId: questionResult.rows[0].id
+        };
+      }));
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
     const session = {
-      id: interviewResult.rows[0].id,
+      id: sessionId,
+      interviewId,
       userId: req.user.id,
       level,
       counts,
       currentIndex: 0,
-      questions: shuffle(questions),
+      questions: persistedQuestions,
       answers: [],
       startedAt: new Date().toISOString()
     };
@@ -442,10 +549,27 @@ router.post('/:id/answer', authMiddleware, async (req, res) => {
 
     session.answers.push({
       questionId: question.id,
+      dbQuestionId: question.dbQuestionId,
       subject: question.subject,
       answer,
       evaluation
     });
+
+    await pool.query(
+      `INSERT INTO interview_answers
+        (question_id, user_id, answer_text, score, feedback, strengths, improvements)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        question.dbQuestionId,
+        req.user.id,
+        answer,
+        evaluation.score,
+        evaluation.feedback,
+        JSON.stringify(evaluation.strengths || []),
+        JSON.stringify(evaluation.improvements || [])
+      ]
+    );
+
     session.currentIndex += 1;
 
     const completed = session.currentIndex >= session.questions.length;
@@ -454,7 +578,13 @@ router.post('/:id/answer', authMiddleware, async (req, res) => {
     if (completed) {
       await pool.query(
         'UPDATE interviews SET score = $1, status = $2 WHERE id = $3 AND user_id = $4',
-        [averageScore * 10, 'completed', session.id, req.user.id]
+        [averageScore * 10, 'completed', session.interviewId, req.user.id]
+      );
+      await pool.query(
+        `UPDATE interview_sessions
+         SET average_score = $1, status = $2, completed_at = NOW()
+         WHERE id = $3 AND user_id = $4`,
+        [averageScore, 'completed', session.id, req.user.id]
       );
       sessions.delete(String(session.id));
     }
@@ -468,6 +598,182 @@ router.post('/:id/answer', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ message: 'Unable to evaluate the answer right now.' });
+  }
+});
+
+router.get('/history', authMiddleware, async (req, res) => {
+  try {
+    const sessionsResult = await pool.query(
+      `SELECT
+        id,
+        type,
+        level,
+        status,
+        total_questions,
+        average_score,
+        started_at,
+        completed_at
+       FROM interview_sessions
+       WHERE user_id = $1
+       ORDER BY started_at DESC
+       LIMIT 25`,
+      [req.user.id]
+    );
+
+    const sessionIds = sessionsResult.rows.map((session) => session.id);
+
+    if (sessionIds.length === 0) {
+      return res.json({ sessions: [] });
+    }
+
+    const questionsResult = await pool.query(
+      `SELECT
+        q.id,
+        q.session_id,
+        q.subject,
+        q.subject_label,
+        q.question_text,
+        q.position,
+        q.keywords,
+        a.answer_text,
+        a.score,
+        a.feedback,
+        a.strengths,
+        a.improvements,
+        a.answered_at
+       FROM interview_questions q
+       LEFT JOIN interview_answers a
+        ON a.question_id = q.id AND a.user_id = $2
+       WHERE q.session_id = ANY($1::int[])
+       ORDER BY q.session_id DESC, q.position ASC`,
+      [sessionIds, req.user.id]
+    );
+
+    const questionsBySession = questionsResult.rows.reduce((summary, row) => {
+      if (!summary[row.session_id]) summary[row.session_id] = [];
+
+      summary[row.session_id].push({
+        id: row.id,
+        subject: row.subject,
+        subjectLabel: row.subject_label,
+        questionText: row.question_text,
+        position: row.position,
+        keywords: parseJsonArray(row.keywords),
+        answer: row.answer_text,
+        score: row.score === null ? null : Number(row.score),
+        feedback: row.feedback,
+        strengths: parseJsonArray(row.strengths),
+        improvements: parseJsonArray(row.improvements),
+        answeredAt: row.answered_at
+      });
+
+      return summary;
+    }, {});
+
+    res.json({
+      sessions: sessionsResult.rows.map((session) => ({
+        id: session.id,
+        type: session.type,
+        level: session.level,
+        status: session.status,
+        totalQuestions: session.total_questions,
+        averageScore: session.average_score === null ? null : Number(session.average_score),
+        startedAt: session.started_at,
+        completedAt: session.completed_at,
+        questions: questionsBySession[session.id] || []
+      }))
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'Unable to load interview history.' });
+  }
+});
+
+router.post('/analytics', authMiddleware, async (req, res) => {
+  const sheetProgress = req.body.sheetProgress || {};
+
+  try {
+    const subjectResult = await pool.query(
+      `SELECT
+        q.subject,
+        AVG(a.score) * 10 AS interview_score,
+        COUNT(a.id) AS answered_count
+       FROM interview_answers a
+       JOIN interview_questions q ON q.id = a.question_id
+       JOIN interview_sessions s ON s.id = q.session_id
+       WHERE s.user_id = $1
+       GROUP BY q.subject`,
+      [req.user.id]
+    );
+
+    const answerResult = await pool.query(
+      `SELECT
+        q.subject,
+        q.question_text,
+        q.keywords,
+        a.score
+       FROM interview_answers a
+       JOIN interview_questions q ON q.id = a.question_id
+       JOIN interview_sessions s ON s.id = q.session_id
+       WHERE s.user_id = $1`,
+      [req.user.id]
+    );
+
+    const subjectRows = new Map(subjectResult.rows.map((row) => [row.subject, row]));
+
+    const subjects = Object.entries(SUBJECT_ANALYTICS).map(([subject, config]) => {
+      const row = subjectRows.get(subject);
+      const interviewScore = row ? toPercent(row.interview_score) : null;
+      const sheetScore = getSheetPercent(sheetProgress, config.sheetKey);
+      const rating = buildRating({ interviewScore, sheetScore });
+
+      return {
+        subject,
+        label: config.label,
+        interviewScore,
+        sheetProgress: sheetScore,
+        rating,
+        answeredCount: row ? Number(row.answered_count) : 0,
+        status: rating < 45 ? 'Weak' : rating < 70 ? 'Needs Practice' : 'Strong'
+      };
+    }).sort((a, b) => a.rating - b.rating);
+
+    const topics = TOPIC_ANALYTICS.map((topicConfig) => {
+      const matchingAnswers = answerResult.rows.filter((row) => {
+        if (row.subject !== topicConfig.subject) return false;
+
+        const text = `${row.question_text} ${parseJsonArray(row.keywords).join(' ')}`.toLowerCase();
+        return topicConfig.keywords.some((keyword) => text.includes(keyword));
+      });
+
+      const interviewScore = matchingAnswers.length
+        ? toPercent((matchingAnswers.reduce((total, row) => total + Number(row.score || 0), 0) / matchingAnswers.length) * 10)
+        : null;
+      const sheetScore = getSheetPercent(sheetProgress, topicConfig.sheetKey);
+      const rating = buildRating({ interviewScore, sheetScore });
+
+      return {
+        topic: topicConfig.topic,
+        subject: topicConfig.subject,
+        interviewScore,
+        sheetProgress: sheetScore,
+        rating,
+        answeredCount: matchingAnswers.length,
+        status: rating < 45 ? 'Weak' : rating < 70 ? 'Needs Practice' : 'Strong'
+      };
+    }).sort((a, b) => a.rating - b.rating);
+
+    res.json({
+      subjects,
+      weakAreas: topics,
+      lowestSubjects: subjects.slice(0, 3),
+      recommendation: topics.length > 0
+        ? `Prioritize ${topics[0].topic} next.`
+        : 'Complete one interview and mark sheet progress to unlock better recommendations.'
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'Unable to build weakness analytics.' });
   }
 });
 

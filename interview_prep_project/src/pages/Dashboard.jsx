@@ -251,6 +251,12 @@ const Dashboard = () => {
             <NavLink className="sidebar-section-card" to="/dashboard">
               Dashboard
             </NavLink>
+            <NavLink className="sidebar-section-card" to="/history">
+              Interview History
+            </NavLink>
+            <NavLink className="sidebar-section-card" to="/analytics">
+              Weakness Analytics
+            </NavLink>
             {preparationSections.map((section) => (
               <NavLink
                 className={({ isActive }) => (
@@ -341,6 +347,19 @@ const Dashboard = () => {
             </div>
 
           </div>
+
+          <section className="dashboard-feature-strip">
+            <Link className="feature-link-card" to="/history">
+              <span className="prep-meta">Saved Sessions</span>
+              <h3>Interview History</h3>
+              <p>Review questions, answers, ratings, and feedback from every completed mock interview.</p>
+            </Link>
+            <Link className="feature-link-card" to="/analytics">
+              <span className="prep-meta">Practice Focus</span>
+              <h3>Weakness Analytics</h3>
+              <p>Find weak topics like Graphs, Deadlocks, and Normalization using interview scores plus sheet progress.</p>
+            </Link>
+          </section>
 
           <section className="section-library">
             <div className="section-library-header">
