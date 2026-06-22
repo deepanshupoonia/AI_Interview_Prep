@@ -332,6 +332,99 @@ const evaluateWithAi = async ({ answer, question }) => {
   };
 };
 
+const getFollowUpFocus = ({ answer, question, evaluation }) => {
+  const text = `${question.questionText} ${answer}`.toLowerCase();
+  const improvements = evaluation?.improvements?.[0] || 'Add a concrete edge case or tradeoff.';
+
+  if (/binary\s*search|sorted|mid|left|right/.test(text)) {
+    return {
+      prompt: 'You mentioned binary search. Walk me through the edge cases that can break a binary search implementation, and explain how you would avoid an infinite loop.',
+      keywords: ['edge', 'case', 'mid', 'overflow', 'left', 'right', 'loop', 'sorted', 'complexity']
+    };
+  }
+
+  if (/complexity|time|space|big\s*o|o\(/.test(text)) {
+    return {
+      prompt: `You discussed complexity. Can you justify the time and space complexity more rigorously, including the best, average, and worst case when they differ?`,
+      keywords: ['time', 'space', 'best', 'average', 'worst', 'complexity', 'tradeoff']
+    };
+  }
+
+  if (/example|application|real|scenario|system/.test(text)) {
+    return {
+      prompt: 'Take the practical example you gave and explain what would change if the input size, concurrency, or failure cases increased significantly.',
+      keywords: ['scale', 'input', 'concurrency', 'failure', 'tradeoff', 'design']
+    };
+  }
+
+  if (/deadlock|mutex|semaphore|thread|process/.test(text)) {
+    return {
+      prompt: 'Let us go one level deeper: what edge case or failure mode would you watch for in this operating-system scenario, and how would you prevent it?',
+      keywords: ['deadlock', 'race', 'starvation', 'synchronization', 'prevention', 'edge']
+    };
+  }
+
+  if (/index|transaction|join|normalization|sql|database/.test(text)) {
+    return {
+      prompt: 'Suppose this database design is under heavy production traffic. What tradeoffs would you consider around consistency, indexing, and query performance?',
+      keywords: ['consistency', 'index', 'query', 'transaction', 'performance', 'tradeoff']
+    };
+  }
+
+  return {
+    prompt: `I want to probe your depth on that answer. ${improvements} Can you refine your explanation with one edge case, one tradeoff, and one practical example?`,
+    keywords: ['edge', 'tradeoff', 'example', 'complexity', 'practical', 'reasoning']
+  };
+};
+
+const generateAiFollowUp = async ({ answer, question, evaluation }) => {
+  const content = await callOpenAI([
+    {
+      role: 'system',
+      content: 'You are a technical interviewer. Return only valid JSON.'
+    },
+    {
+      role: 'user',
+      content: `Original question: ${question.questionText}\nCandidate answer: ${answer}\nEvaluation: ${evaluation.feedback}\nStrengths: ${(evaluation.strengths || []).join('; ')}\nImprovements: ${(evaluation.improvements || []).join('; ')}\nCreate one contextual follow-up question that tests depth, edge cases, complexity, or practical application. Return {"questionText":"...","keywords":["..."]}.`
+    }
+  ], 0.35);
+
+  if (!content) return null;
+
+  const parsed = parseJsonObject(content);
+  if (!parsed?.questionText) return null;
+
+  return {
+    prompt: parsed.questionText,
+    keywords: Array.isArray(parsed.keywords) ? parsed.keywords.slice(0, 10) : []
+  };
+};
+
+const buildFollowUpQuestion = async ({ answer, question, evaluation }) => {
+  let followUp = null;
+
+  try {
+    followUp = await generateAiFollowUp({ answer, question, evaluation });
+  } catch (err) {
+    console.error(`AI follow-up generation failed: ${err.message}`);
+  }
+
+  if (!followUp) {
+    followUp = getFollowUpFocus({ answer, question, evaluation });
+  }
+
+  return {
+    id: `followup-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    subject: question.subject,
+    subjectLabel: question.subjectLabel,
+    level: question.level,
+    questionText: followUp.prompt,
+    keywords: followUp.keywords,
+    isFollowUp: true,
+    parentQuestionId: question.dbQuestionId
+  };
+};
+
 const getCurrentQuestion = (session) => {
   const question = session.questions[session.currentIndex];
 
@@ -343,6 +436,8 @@ const getCurrentQuestion = (session) => {
     subjectLabel: question.subjectLabel,
     level: question.level,
     questionText: question.questionText,
+    isFollowUp: Boolean(question.isFollowUp),
+    parentQuestionId: question.parentQuestionId || null,
     number: session.currentIndex + 1,
     total: session.questions.length
   };
@@ -369,6 +464,12 @@ const SUBJECT_ANALYTICS = {
 
 const TOPIC_ANALYTICS = [
   {
+    topic: 'Binary Search',
+    subject: 'DSA',
+    sheetKey: 'DSA',
+    keywords: ['binary', 'search', 'sorted', 'mid', 'left', 'right', 'log']
+  },
+  {
     topic: 'Graphs',
     subject: 'DSA',
     sheetKey: 'DSA',
@@ -381,10 +482,28 @@ const TOPIC_ANALYTICS = [
     keywords: ['deadlock', 'mutual', 'hold', 'wait', 'preemption', 'circular']
   },
   {
+    topic: 'Concurrency',
+    subject: 'OS',
+    sheetKey: 'OS',
+    keywords: ['thread', 'mutex', 'semaphore', 'race', 'synchronization', 'starvation']
+  },
+  {
     topic: 'Normalization',
     subject: 'DBMS',
     sheetKey: 'DBMS',
     keywords: ['normalization', '3nf', 'dependency', 'redundancy', 'anomaly']
+  },
+  {
+    topic: 'Indexing',
+    subject: 'DBMS',
+    sheetKey: 'DBMS',
+    keywords: ['index', 'query', 'performance', 'b-tree', 'slow', 'optimize']
+  },
+  {
+    topic: 'OOP Design',
+    subject: 'OOP',
+    sheetKey: 'OOP',
+    keywords: ['inheritance', 'composition', 'polymorphism', 'abstraction', 'encapsulation', 'solid']
   }
 ];
 
@@ -403,6 +522,8 @@ const buildRating = ({ interviewScore, sheetScore }) => {
   if (sheetScore === null) return Math.round(interviewScore);
   return Math.round((interviewScore * 0.65) + (sheetScore * 0.35));
 };
+
+const formatTrendDate = (value) => new Date(value).toISOString().slice(0, 10);
 
 router.post('/start', authMiddleware, async (req, res) => {
   const level = LEVELS.includes(req.body.level) ? req.body.level : null;
@@ -477,7 +598,8 @@ router.post('/start', authMiddleware, async (req, res) => {
 
         return {
           ...question,
-          dbQuestionId: questionResult.rows[0].id
+          dbQuestionId: questionResult.rows[0].id,
+          position: index + 1
         };
       }));
 
@@ -498,6 +620,8 @@ router.post('/start', authMiddleware, async (req, res) => {
       currentIndex: 0,
       questions: persistedQuestions,
       answers: [],
+      followUpsAsked: 0,
+      maxFollowUps: Math.min(orderedQuestions.length, 6),
       startedAt: new Date().toISOString()
     };
 
@@ -547,6 +671,82 @@ router.post('/:id/answer', authMiddleware, async (req, res) => {
       evaluation = evaluateLocally({ answer, question });
     }
 
+    const shouldAskFollowUp = !question.isFollowUp && session.followUpsAsked < session.maxFollowUps;
+    let followUpQuestion = null;
+
+    if (shouldAskFollowUp) {
+      followUpQuestion = await buildFollowUpQuestion({ answer, question, evaluation });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      await client.query(
+        `INSERT INTO interview_answers
+          (question_id, user_id, answer_text, score, feedback, strengths, improvements)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          question.dbQuestionId,
+          req.user.id,
+          answer,
+          evaluation.score,
+          evaluation.feedback,
+          JSON.stringify(evaluation.strengths || []),
+          JSON.stringify(evaluation.improvements || [])
+        ]
+      );
+
+      if (followUpQuestion) {
+        await client.query(
+          `UPDATE interview_questions
+           SET position = position + 1
+           WHERE session_id = $1 AND position > $2`,
+          [session.id, question.position]
+        );
+
+        const followUpResult = await client.query(
+          `INSERT INTO interview_questions
+            (session_id, subject, subject_label, question_text, level, position, keywords)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id`,
+          [
+            session.id,
+            followUpQuestion.subject,
+            followUpQuestion.subjectLabel,
+            followUpQuestion.questionText,
+            followUpQuestion.level,
+            question.position + 1,
+            JSON.stringify(followUpQuestion.keywords || [])
+          ]
+        );
+
+        followUpQuestion.dbQuestionId = followUpResult.rows[0].id;
+        followUpQuestion.position = question.position + 1;
+
+        session.questions.forEach((item) => {
+          if (item.position > question.position) {
+            item.position += 1;
+          }
+        });
+
+        await client.query(
+          `UPDATE interview_sessions
+           SET total_questions = total_questions + 1
+           WHERE id = $1 AND user_id = $2`,
+          [session.id, req.user.id]
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
     session.answers.push({
       questionId: question.id,
       dbQuestionId: question.dbQuestionId,
@@ -555,20 +755,10 @@ router.post('/:id/answer', authMiddleware, async (req, res) => {
       evaluation
     });
 
-    await pool.query(
-      `INSERT INTO interview_answers
-        (question_id, user_id, answer_text, score, feedback, strengths, improvements)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        question.dbQuestionId,
-        req.user.id,
-        answer,
-        evaluation.score,
-        evaluation.feedback,
-        JSON.stringify(evaluation.strengths || []),
-        JSON.stringify(evaluation.improvements || [])
-      ]
-    );
+    if (followUpQuestion) {
+      session.questions.splice(session.currentIndex + 1, 0, followUpQuestion);
+      session.followUpsAsked += 1;
+    }
 
     session.currentIndex += 1;
 
@@ -693,6 +883,20 @@ router.post('/analytics', authMiddleware, async (req, res) => {
   const sheetProgress = req.body.sheetProgress || {};
 
   try {
+    const sessionTrendResult = await pool.query(
+      `SELECT
+        id,
+        level,
+        average_score,
+        started_at,
+        completed_at
+       FROM interview_sessions
+       WHERE user_id = $1 AND average_score IS NOT NULL
+       ORDER BY COALESCE(completed_at, started_at) ASC
+       LIMIT 30`,
+      [req.user.id]
+    );
+
     const subjectResult = await pool.query(
       `SELECT
         q.subject,
@@ -711,7 +915,9 @@ router.post('/analytics', authMiddleware, async (req, res) => {
         q.subject,
         q.question_text,
         q.keywords,
-        a.score
+        a.score,
+        a.answered_at,
+        s.id AS session_id
        FROM interview_answers a
        JOIN interview_questions q ON q.id = a.question_id
        JOIN interview_sessions s ON s.id = q.session_id
@@ -720,6 +926,19 @@ router.post('/analytics', authMiddleware, async (req, res) => {
     );
 
     const subjectRows = new Map(subjectResult.rows.map((row) => [row.subject, row]));
+    const scoreTrend = sessionTrendResult.rows.map((session, index, rows) => {
+      const score = Number(session.average_score) * 10;
+      const previousScore = index > 0 ? Number(rows[index - 1].average_score) * 10 : null;
+
+      return {
+        sessionId: session.id,
+        label: `#${session.id}`,
+        level: session.level,
+        date: formatTrendDate(session.completed_at || session.started_at),
+        score: Math.round(score),
+        change: previousScore === null ? null : Math.round(score - previousScore)
+      };
+    });
 
     const subjects = Object.entries(SUBJECT_ANALYTICS).map(([subject, config]) => {
       const row = subjectRows.get(subject);
@@ -737,6 +956,13 @@ router.post('/analytics', authMiddleware, async (req, res) => {
         status: rating < 45 ? 'Weak' : rating < 70 ? 'Needs Practice' : 'Strong'
       };
     }).sort((a, b) => a.rating - b.rating);
+
+    const subjectComparisons = subjects
+      .map((subject) => ({
+        ...subject,
+        gap: Math.round((subject.sheetProgress || 0) - (subject.interviewScore || 0))
+      }))
+      .sort((a, b) => b.rating - a.rating);
 
     const topics = TOPIC_ANALYTICS.map((topicConfig) => {
       const matchingAnswers = answerResult.rows.filter((row) => {
@@ -763,12 +989,45 @@ router.post('/analytics', authMiddleware, async (req, res) => {
       };
     }).sort((a, b) => a.rating - b.rating);
 
+    const firstScore = scoreTrend[0]?.score ?? null;
+    const latestScore = scoreTrend[scoreTrend.length - 1]?.score ?? null;
+    const bestScore = scoreTrend.length ? Math.max(...scoreTrend.map((item) => item.score)) : null;
+    const recentScores = scoreTrend.slice(-3);
+    const earlierScores = scoreTrend.slice(0, Math.max(0, scoreTrend.length - 3));
+    const recentAverage = recentScores.length
+      ? Math.round(recentScores.reduce((total, item) => total + item.score, 0) / recentScores.length)
+      : null;
+    const earlierAverage = earlierScores.length
+      ? Math.round(earlierScores.reduce((total, item) => total + item.score, 0) / earlierScores.length)
+      : null;
+
+    const improvementHistory = {
+      firstScore,
+      latestScore,
+      bestScore,
+      totalSessions: scoreTrend.length,
+      netChange: firstScore === null || latestScore === null ? null : latestScore - firstScore,
+      recentAverage,
+      recentChange: recentAverage === null || earlierAverage === null ? null : recentAverage - earlierAverage,
+      message: scoreTrend.length < 2
+        ? 'Complete more interviews to reveal score movement.'
+        : `${latestScore >= firstScore ? 'Improved' : 'Changed'} ${Math.abs(latestScore - firstScore)} points from first to latest saved interview.`
+    };
+
+    const strongTopics = topics.filter((topic) => topic.rating >= 70).sort((a, b) => b.rating - a.rating).slice(0, 3);
+    const weakTopics = topics.filter((topic) => topic.rating < 70).slice(0, 4);
+
     res.json({
       subjects,
+      subjectComparisons,
       weakAreas: topics,
+      weakTopics,
+      strongTopics,
+      scoreTrend,
+      improvementHistory,
       lowestSubjects: subjects.slice(0, 3),
-      recommendation: topics.length > 0
-        ? `Prioritize ${topics[0].topic} next.`
+      recommendation: weakTopics.length > 0
+        ? `Prioritize ${weakTopics[0].topic} next.`
         : 'Complete one interview and mark sheet progress to unlock better recommendations.'
     });
   } catch (err) {

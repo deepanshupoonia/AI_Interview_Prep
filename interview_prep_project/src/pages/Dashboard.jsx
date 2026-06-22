@@ -156,7 +156,7 @@ const Dashboard = () => {
             <h2>{interviewLevel} Mixed Mock Interview</h2>
             {currentQuestion && (
               <p className="interview-progress-text">
-                Question {currentQuestion.number} of {currentQuestion.total}
+                {currentQuestion.isFollowUp ? 'Contextual follow-up' : `Question ${currentQuestion.number} of ${currentQuestion.total}`}
               </p>
             )}
           </div>
@@ -170,6 +170,7 @@ const Dashboard = () => {
             <div className="interview-question-meta">
               <span>{currentQuestion.subject}</span>
               <span>{currentQuestion.subjectLabel}</span>
+              {currentQuestion.isFollowUp && <span>AI follow-up</span>}
             </div>
             <div className="question-box">
               {currentQuestion.questionText}
@@ -226,7 +227,7 @@ const Dashboard = () => {
             <div className="answer-actions">
               <span>{answer.trim().length} characters</span>
               <button className="btn" type="submit" disabled={isSubmittingAnswer || answer.trim().length < 20}>
-                {isSubmittingAnswer ? 'Evaluating...' : evaluation ? 'Submit and Continue' : 'Submit Answer'}
+                {isSubmittingAnswer ? 'Evaluating...' : evaluation ? 'Submit Response' : 'Submit Answer'}
               </button>
             </div>
           </form>

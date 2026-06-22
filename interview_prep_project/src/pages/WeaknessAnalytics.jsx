@@ -22,6 +22,48 @@ const MetricBar = ({ label, value }) => (
   </div>
 );
 
+const TrendChart = ({ points }) => {
+  if (!points?.length) {
+    return <div className="empty-state inline-empty">Complete interviews to see score trends.</div>;
+  }
+
+  return (
+    <div className="trend-chart" aria-label="Interview score trend">
+      {points.map((point) => (
+        <div className="trend-column" key={point.sessionId}>
+          <div className="trend-bar-track">
+            <div className="trend-bar" style={{ height: `${point.score}%` }} />
+          </div>
+          <strong>{point.score}</strong>
+          <span>{point.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const TopicList = ({ title, topics, emptyText }) => (
+  <div className="topic-insight-block">
+    <h3>{title}</h3>
+    {topics?.length ? (
+      <div className="topic-insight-list">
+        {topics.map((topic) => (
+          <article className={`topic-insight-card ${getRatingClass(topic.rating)}`} key={`${title}-${topic.topic}`}>
+            <div>
+              <span className="prep-meta">{topic.subject}</span>
+              <h4>{topic.topic}</h4>
+              <p>{topic.answeredCount} related {topic.answeredCount === 1 ? 'answer' : 'answers'}</p>
+            </div>
+            <strong>{topic.rating}</strong>
+          </article>
+        ))}
+      </div>
+    ) : (
+      <p className="empty-state inline-empty">{emptyText}</p>
+    )}
+  </div>
+);
+
 const WeaknessAnalytics = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -77,6 +119,79 @@ const WeaknessAnalytics = () => {
 
       {analytics && (
         <>
+          <section className="analytics-panel">
+            <div className="section-library-header">
+              <div>
+                <p className="eyebrow">Progress Tracking</p>
+                <h2>Score trend</h2>
+              </div>
+              <p>{analytics.improvementHistory?.message}</p>
+            </div>
+
+            <div className="performance-overview-grid">
+              <article className="performance-stat">
+                <span>Latest</span>
+                <strong>{analytics.improvementHistory?.latestScore ?? '-'}</strong>
+              </article>
+              <article className="performance-stat">
+                <span>Best</span>
+                <strong>{analytics.improvementHistory?.bestScore ?? '-'}</strong>
+              </article>
+              <article className="performance-stat">
+                <span>Net change</span>
+                <strong>{analytics.improvementHistory?.netChange === null ? '-' : `${analytics.improvementHistory.netChange > 0 ? '+' : ''}${analytics.improvementHistory.netChange}`}</strong>
+              </article>
+              <article className="performance-stat">
+                <span>Recent avg</span>
+                <strong>{analytics.improvementHistory?.recentAverage ?? '-'}</strong>
+              </article>
+            </div>
+
+            <TrendChart points={analytics.scoreTrend} />
+          </section>
+
+          <section className="analytics-panel">
+            <div className="section-library-header">
+              <div>
+                <p className="eyebrow">Subject Comparison</p>
+                <h2>Interview vs preparation</h2>
+              </div>
+              <p>Large gaps show where sheet progress has not yet translated into interview performance.</p>
+            </div>
+
+            <div className="comparison-grid">
+              {analytics.subjectComparisons.map((subject) => (
+                <article className="comparison-card" key={subject.subject}>
+                  <div className="comparison-card-header">
+                    <div>
+                      <span className="prep-meta">{subject.subject}</span>
+                      <h3>{subject.label}</h3>
+                    </div>
+                    <strong>{subject.rating}</strong>
+                  </div>
+                  <MetricBar label="Interview score" value={subject.interviewScore} />
+                  <MetricBar label="Sheet progress" value={subject.sheetProgress} />
+                  <p>{subject.gap > 15 ? 'Practice timed verbal explanations for this subject.' : 'Interview score and preparation progress are reasonably aligned.'}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="analytics-panel">
+            <div className="section-library-header">
+              <div>
+                <p className="eyebrow">Topic Signals</p>
+                <h2>Strong and weak topics</h2>
+              </div>
+              <p>Topic labels are inferred from interview questions, keywords, and historical scores.</p>
+            </div>
+
+            <div className="topic-insight-grid">
+              <TopicList title="Strong topics" topics={analytics.strongTopics} emptyText="No strong topic signal yet." />
+              <TopicList title="Needs focus" topics={analytics.weakTopics} emptyText="No weak topic signal yet." />
+            </div>
+          </section>
+
           <section className="analytics-panel">
             <div className="section-library-header">
               <div>
