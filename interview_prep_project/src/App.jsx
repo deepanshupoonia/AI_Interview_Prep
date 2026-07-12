@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import SectionPage from './pages/SectionPage';
 import InterviewHistory from './pages/InterviewHistory';
 import WeaknessAnalytics from './pages/WeaknessAnalytics';
+import ResumePage from './pages/ResumePage';
 import { apiUrl, readApiResponse } from './api';
 import './App.css';
 
@@ -21,6 +22,11 @@ function App() {
   });
   const [accountMessage, setAccountMessage] = useState('');
   const [accountError, setAccountError] = useState('');
+  const [liveInterview, setLiveInterview] = useState({
+    active: false,
+    formattedTimeLeft: '0:00',
+    isTimeUp: false
+  });
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -49,6 +55,23 @@ function App() {
 
     fetchProfile();
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    const handleLiveInterviewState = (event) => {
+      setLiveInterview({
+        active: Boolean(event.detail?.active),
+        formattedTimeLeft: event.detail?.formattedTimeLeft || '0:00',
+        isTimeUp: Boolean(event.detail?.isTimeUp)
+      });
+
+      if (event.detail?.active) {
+        setAccountOpen(false);
+      }
+    };
+
+    window.addEventListener('live-interview-state', handleLiveInterviewState);
+    return () => window.removeEventListener('live-interview-state', handleLiveInterviewState);
+  }, []);
 
   const updateAccount = async (event) => {
     event.preventDefault();
@@ -94,9 +117,25 @@ function App() {
           <div className="nav-links">
             {!isAuthenticated && <a href="/login">Login</a>}
             {!isAuthenticated && <a href="/register">Register</a>}
-            {isAuthenticated && (
+            {isAuthenticated && liveInterview.active && (
+              <div className="nav-interview-controls">
+                <div className={liveInterview.isTimeUp ? 'interview-timer nav-timer time-up' : 'interview-timer nav-timer'} aria-live="polite">
+                  <span>{liveInterview.isTimeUp ? 'Time up' : 'Time left'}</span>
+                  <strong>{liveInterview.formattedTimeLeft}</strong>
+                </div>
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={() => window.dispatchEvent(new Event('end-live-interview'))}
+                >
+                  End Session
+                </button>
+              </div>
+            )}
+            {isAuthenticated && !liveInterview.active && (
               <>
                 <Link to="/dashboard">Dashboard</Link>
+                <Link to="/resume">Resume</Link>
                 <Link to="/history">History</Link>
                 <Link to="/analytics">Analytics</Link>
                 <span className="student-name">{profile?.name || 'Student'}</span>
@@ -190,6 +229,10 @@ function App() {
               <Route
                 path="/analytics"
                 element={isAuthenticated ? <WeaknessAnalytics /> : <Navigate to="/login" />}
+              />
+              <Route
+                path="/resume"
+                element={isAuthenticated ? <ResumePage /> : <Navigate to="/login" />}
               />
             </Routes>
           </main>

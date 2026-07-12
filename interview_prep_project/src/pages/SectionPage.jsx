@@ -344,9 +344,9 @@ const SectionPage = () => {
                         {item.acceptance && <span>{item.acceptance} acceptance</span>}
                       </div>
                     </div>
-                    {item.url && (
-                      <a className="content-link" href={item.url} target="_blank" rel="noreferrer">
-                        Open
+                    {(item.url || item.filePath) && (
+                      <a className="content-link" href={item.filePath ? apiUrl(item.filePath) : item.url} target="_blank" rel="noreferrer">
+                        {item.filePath ? 'Open Material' : 'Open'}
                       </a>
                     )}
                   </article>

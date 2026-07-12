@@ -10,6 +10,11 @@ const Dashboard = () => {
   const [interviewStarted, setInterviewStarted] = useState(false);
   const [interviewId, setInterviewId] = useState(null);
   const [interviewLevel, setInterviewLevel] = useState('Intermediate');
+  const [interviewType, setInterviewType] = useState('Core Subjects');
+  const [resumeQuestionCount, setResumeQuestionCount] = useState(3);
+  const [interviewMinutes, setInterviewMinutes] = useState(30);
+  const [remainingSeconds, setRemainingSeconds] = useState(30 * 60);
+  const [interviewEndsAt, setInterviewEndsAt] = useState(null);
   const [questionCounts, setQuestionCounts] = useState({
     OOP: 2,
     OS: 2,
@@ -18,6 +23,12 @@ const Dashboard = () => {
   });
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [answer, setAnswer] = useState('');
+  const [codeAnswer, setCodeAnswer] = useState('');
+  const [codeLanguage, setCodeLanguage] = useState('python');
+  const [editableTestCases, setEditableTestCases] = useState([]);
+  const [testResults, setTestResults] = useState([]);
+  const [testRunMessage, setTestRunMessage] = useState('');
+  const [isRunningTests, setIsRunningTests] = useState(false);
   const [evaluation, setEvaluation] = useState(null);
   const [interviewSummary, setInterviewSummary] = useState(null);
   const [interviewError, setInterviewError] = useState('');
@@ -32,6 +43,13 @@ const Dashboard = () => {
     DBMS: { label: 'DBMS', name: 'Database Management Systems', max: 10 },
     DSA: { label: 'DSA', name: 'Data Structures and Algorithms', max: 5 }
   };
+
+  const codingLanguages = [
+    { value: 'python', label: 'Python' },
+    { value: 'cpp', label: 'C++' },
+    { value: 'c', label: 'C' },
+    { value: 'java', label: 'Java' }
+  ];
 
   async function fetchProfile() {
     try {
@@ -63,6 +81,139 @@ const Dashboard = () => {
     return () => window.removeEventListener('focus', refreshProgress);
   }, []);
 
+  useEffect(() => {
+    if (!interviewStarted || !interviewEndsAt) return undefined;
+
+    const updateTimer = () => {
+      const secondsLeft = Math.max(0, Math.ceil((interviewEndsAt - Date.now()) / 1000));
+      setRemainingSeconds(secondsLeft);
+    };
+
+    updateTimer();
+    const timerId = window.setInterval(updateTimer, 1000);
+
+    return () => window.clearInterval(timerId);
+  }, [interviewStarted, interviewEndsAt]);
+
+  useEffect(() => {
+    const handleNavEndInterview = () => {
+      endInterview();
+    };
+
+    window.addEventListener('end-live-interview', handleNavEndInterview);
+    return () => window.removeEventListener('end-live-interview', handleNavEndInterview);
+  });
+
+  useEffect(() => {
+    const minutesLeft = Math.floor(remainingSeconds / 60);
+    const secondsLeft = remainingSeconds % 60;
+    const formattedTimeLeft = `${minutesLeft}:${String(secondsLeft).padStart(2, '0')}`;
+
+    window.dispatchEvent(new CustomEvent('live-interview-state', {
+      detail: {
+        active: interviewStarted,
+        isTimeUp: interviewStarted && remainingSeconds === 0,
+        formattedTimeLeft
+      }
+    }));
+  }, [interviewStarted, remainingSeconds]);
+
+  useEffect(() => {
+    if (!currentQuestion) return;
+
+    setAnswer('');
+    setCodeLanguage('python');
+    setCodeAnswer(currentQuestion.codeTemplates?.python || currentQuestion.starterCode || '');
+    setEditableTestCases(currentQuestion.testCases || []);
+    setTestResults([]);
+    setTestRunMessage('');
+  }, [currentQuestion]);
+
+  const runCodeTests = async () => {
+    if (!editableTestCases.length) {
+      setTestRunMessage('No visible test cases are attached to this question.');
+      setTestResults([]);
+      return [];
+    }
+
+    setIsRunningTests(true);
+    setInterviewError('');
+
+    try {
+      const res = await fetch(apiUrl(`/api/interview/${interviewId}/run-code`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          language: codeLanguage,
+          code: codeAnswer,
+          testCases: editableTestCases
+        })
+      });
+      const data = await readApiResponse(res);
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Unable to run code.');
+      }
+
+      if (!data.ok) {
+        setTestResults([]);
+        setTestRunMessage(data.message || 'Compilation or execution failed.');
+        return [];
+      }
+
+      const results = Array.isArray(data.results)
+        ? data.results.map((result, index) => ({
+          index,
+          input: editableTestCases[index]?.input,
+          expected: result.expected,
+          actual: result.actual,
+          passed: Boolean(result.passed)
+        }))
+        : [];
+
+      setTestResults(results);
+      setTestRunMessage(data.message || `${results.filter((result) => result.passed).length} of ${results.length} visible tests passed.`);
+      return results;
+    } catch (error) {
+      setTestResults([]);
+      setTestRunMessage(error.message || 'Unable to run code.');
+      return [];
+    } finally {
+      setIsRunningTests(false);
+    }
+  };
+
+  const handleLanguageChange = (language) => {
+    setCodeLanguage(language);
+    setCodeAnswer(currentQuestion?.codeTemplates?.[language] || '');
+    setTestResults([]);
+    setTestRunMessage('');
+    setInterviewError('');
+  };
+
+  const updateEditableTestCase = (index, field, value) => {
+    setEditableTestCases((current) => current.map((testCase, testIndex) => {
+      if (testIndex !== index) return testCase;
+
+      try {
+        return { ...testCase, [field]: JSON.parse(value) };
+      } catch {
+        return { ...testCase, [`${field}Text`]: value };
+      }
+    }));
+    setTestResults([]);
+    setTestRunMessage('');
+  };
+
+  const addEditableTestCase = () => {
+    setEditableTestCases((current) => [...current, { input: [], expected: null }]);
+    setTestResults([]);
+    setTestRunMessage('');
+  };
+
   const startInterview = async () => {
     setInterviewError('');
     setInterviewSummary(null);
@@ -77,16 +228,20 @@ const Dashboard = () => {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify({
+          interviewType,
+          resumeQuestionCount,
           level: interviewLevel,
           counts: questionCounts
         })
       });
       const data = await readApiResponse(res);
       if (res.ok) {
+        const durationSeconds = Math.max(1, Number(interviewMinutes)) * 60;
         setInterviewId(data.interviewId);
         setInterviewStarted(true);
+        setRemainingSeconds(durationSeconds);
+        setInterviewEndsAt(Date.now() + durationSeconds * 1000);
         setCurrentQuestion(data.question);
-        setAnswer('');
       } else {
         setInterviewError(data.message || 'Error starting interview');
       }
@@ -98,10 +253,11 @@ const Dashboard = () => {
     }
   };
 
-  const submitAnswer = async (event) => {
+  const submitAnswer = async (event, answerOverride = null) => {
     event.preventDefault();
     setInterviewError('');
     setIsSubmittingAnswer(true);
+    const submittedAnswer = answerOverride ?? answer;
 
     try {
       const res = await fetch(apiUrl(`/api/interview/${interviewId}/answer`), {
@@ -110,7 +266,7 @@ const Dashboard = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ answer })
+        body: JSON.stringify({ answer: submittedAnswer })
       });
       const data = await readApiResponse(res);
 
@@ -126,6 +282,11 @@ const Dashboard = () => {
       });
       setCurrentQuestion(data.nextQuestion || currentQuestion);
       setAnswer('');
+      setCodeLanguage('python');
+      setCodeAnswer(data.nextQuestion?.codeTemplates?.python || data.nextQuestion?.starterCode || '');
+      setEditableTestCases(data.nextQuestion?.testCases || []);
+      setTestResults([]);
+      setTestRunMessage('');
     } catch (err) {
       console.error(err);
       setInterviewError('Cannot connect to the interview server.');
@@ -138,14 +299,33 @@ const Dashboard = () => {
     setInterviewStarted(false);
     setInterviewId(null);
     setCurrentQuestion(null);
+    setInterviewEndsAt(null);
+    setRemainingSeconds(Math.max(1, Number(interviewMinutes)) * 60);
     setAnswer('');
+    setCodeAnswer('');
+    setEditableTestCases([]);
+    setCodeLanguage('python');
+    setTestResults([]);
+    setTestRunMessage('');
+    setIsRunningTests(false);
     setEvaluation(null);
     setInterviewSummary(null);
     setInterviewError('');
+    window.dispatchEvent(new CustomEvent('live-interview-state', {
+      detail: {
+        active: false,
+        isTimeUp: false,
+        formattedTimeLeft: '0:00'
+      }
+    }));
   };
 
   if (loading) return <div className="loading-state">Loading your dashboard...</div>;
   if (!profile) return null;
+
+  const isTimeUp = interviewStarted && remainingSeconds === 0;
+  const isCodingQuestion = currentQuestion?.questionType === 'coding';
+  const visibleTestsPassed = testResults.length > 0 && testResults.every((result) => result.passed);
 
   if (interviewStarted) {
     return (
@@ -153,16 +333,13 @@ const Dashboard = () => {
         <div className="interview-header">
           <div>
             <p className="eyebrow">Live Practice</p>
-            <h2>{interviewLevel} Mixed Mock Interview</h2>
+            <h2>{interviewLevel} {interviewType} Interview</h2>
             {currentQuestion && (
               <p className="interview-progress-text">
                 {currentQuestion.isFollowUp ? 'Contextual follow-up' : `Question ${currentQuestion.number} of ${currentQuestion.total}`}
               </p>
             )}
           </div>
-          <button className="btn btn-danger" onClick={endInterview}>
-            End Session
-          </button>
         </div>
 
         {currentQuestion && (
@@ -179,6 +356,7 @@ const Dashboard = () => {
         )}
 
         {interviewError && <div className="error-text">{interviewError}</div>}
+        {isTimeUp && <div className="error-text">Interview time is up. End the session or review your last evaluation.</div>}
 
         {evaluation && (
           <div className="evaluation-panel">
@@ -215,21 +393,159 @@ const Dashboard = () => {
             <button className="btn" type="button" onClick={endInterview}>Back to Dashboard</button>
           </div>
         ) : (
-          <form className="answer-panel" onSubmit={submitAnswer}>
-            <label htmlFor="candidate-answer">Type your answer</label>
-            <textarea
-              id="candidate-answer"
-              placeholder="Write your answer like you would explain it to an interviewer..."
-              value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              rows="7"
-            />
-            <div className="answer-actions">
-              <span>{answer.trim().length} characters</span>
-              <button className="btn" type="submit" disabled={isSubmittingAnswer || answer.trim().length < 20}>
-                {isSubmittingAnswer ? 'Evaluating...' : evaluation ? 'Submit Response' : 'Submit Answer'}
-              </button>
-            </div>
+          <form className="answer-panel" onSubmit={async (event) => {
+            if (isCodingQuestion) {
+              event.preventDefault();
+              const latestResults = testResults.length ? testResults : await runCodeTests();
+
+              if (!latestResults.length || latestResults.some((result) => !result.passed)) {
+                setInterviewError('Run the visible tests and pass all of them before submitting your code.');
+                return;
+              }
+
+              setAnswer(JSON.stringify({
+                type: 'coding',
+                language: codeLanguage,
+                code: codeAnswer,
+                testResults: latestResults
+              }));
+              submitAnswer(event, JSON.stringify({
+                type: 'coding',
+                language: codeLanguage,
+                code: codeAnswer,
+                testResults: latestResults
+              }));
+              return;
+            }
+
+            submitAnswer(event);
+          }}>
+            {isCodingQuestion ? (
+              <>
+                <section className="coding-workspace">
+                  <div className="coding-problem-panel">
+                    <span className="prep-meta">Coding Problem</span>
+                    <h3>{currentQuestion.title || currentQuestion.questionText}</h3>
+                    <p>{currentQuestion.description || currentQuestion.questionText}</p>
+                    <div className="coding-example-list">
+                      {editableTestCases.slice(0, 2).map((testCase, index) => (
+                        <article className="coding-example" key={index}>
+                          <strong>Example {index + 1}</strong>
+                          <p>Input: {JSON.stringify(testCase.input)}</p>
+                          <p>Output: {JSON.stringify(testCase.expected)}</p>
+                        </article>
+                      ))}
+                    </div>
+                    {currentQuestion.constraints?.length > 0 && (
+                      <div className="coding-constraints">
+                        <strong>Constraints</strong>
+                        <ul>
+                          {currentQuestion.constraints.map((constraint) => <li key={constraint}>{constraint}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                  <div className="coding-editor-panel">
+                    <label htmlFor="code-language">Language</label>
+                    <select
+                      id="code-language"
+                      value={codeLanguage}
+                      onChange={(event) => handleLanguageChange(event.target.value)}
+                      disabled={isTimeUp}
+                    >
+                      {codingLanguages.map((language) => (
+                        <option key={language.value} value={language.value}>{language.label}</option>
+                      ))}
+                    </select>
+                    <label htmlFor="candidate-code">Code editor</label>
+                    <textarea
+                      id="candidate-code"
+                      className="code-editor"
+                      value={codeAnswer}
+                      onChange={(event) => {
+                        setCodeAnswer(event.target.value);
+                        setTestResults([]);
+                        setTestRunMessage('');
+                        setInterviewError('');
+                      }}
+                      rows="16"
+                      spellCheck="false"
+                      disabled={isTimeUp}
+                    />
+                  </div>
+                </section>
+                <div className="test-case-panel">
+                  <div className="answer-actions">
+                    <span>{testRunMessage || `${editableTestCases.length || 0} visible tests`}</span>
+                    <button className="btn btn-secondary" type="button" onClick={runCodeTests} disabled={isTimeUp || isRunningTests}>
+                      {isRunningTests ? 'Running...' : 'Run Tests'}
+                    </button>
+                  </div>
+                  {testResults.length > 0 && (
+                    <div className="test-result-list">
+                      {testResults.map((result) => (
+                        <article className={result.passed ? 'test-result passed' : 'test-result failed'} key={result.index}>
+                          <strong>Test {result.index + 1}: {result.passed ? 'Passed' : 'Failed'}</strong>
+                          <p>Input: {JSON.stringify(result.input)}</p>
+                          <p>Expected: {JSON.stringify(result.expected)}</p>
+                          <p>Actual: {JSON.stringify(result.actual)}</p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                  <div className="editable-test-grid">
+                    {editableTestCases.map((testCase, index) => (
+                      <article className="editable-test-card" key={index}>
+                        <strong>Editable Test {index + 1}</strong>
+                        <label>
+                          <span>Input JSON</span>
+                          <textarea
+                            value={JSON.stringify(testCase.input)}
+                            onChange={(event) => updateEditableTestCase(index, 'input', event.target.value)}
+                            rows="3"
+                          />
+                        </label>
+                        <label>
+                          <span>Expected JSON</span>
+                          <textarea
+                            value={JSON.stringify(testCase.expected)}
+                            onChange={(event) => updateEditableTestCase(index, 'expected', event.target.value)}
+                            rows="2"
+                          />
+                        </label>
+                      </article>
+                    ))}
+                    <button className="btn btn-secondary" type="button" onClick={addEditableTestCase}>
+                      Add Test Case
+                    </button>
+                  </div>
+                </div>
+                <div className="answer-actions">
+                  <span>{visibleTestsPassed ? 'Ready for AI evaluation' : 'Pass visible tests before submitting'}</span>
+                  <button className="btn" type="submit" disabled={isTimeUp || isSubmittingAnswer || !visibleTestsPassed}>
+                    {isSubmittingAnswer ? 'Evaluating...' : 'Submit Code'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <label htmlFor="candidate-answer">Type your answer</label>
+                <textarea
+                  id="candidate-answer"
+                  placeholder="Write your answer like you would explain it to an interviewer..."
+                  value={answer}
+                  onChange={(event) => setAnswer(event.target.value)}
+                  rows="7"
+                  disabled={isTimeUp}
+                />
+                <div className="answer-actions">
+                  <span>{answer.trim().length} characters</span>
+                  <button className="btn" type="submit" disabled={isTimeUp || isSubmittingAnswer || answer.trim().length < 20}>
+                    {isSubmittingAnswer ? 'Evaluating...' : evaluation ? 'Submit Response' : 'Submit Answer'}
+                  </button>
+                </div>
+              </>
+            )}
           </form>
         )}
       </div>
@@ -251,6 +567,9 @@ const Dashboard = () => {
           <nav className="section-slide-list">
             <NavLink className="sidebar-section-card" to="/dashboard">
               Dashboard
+            </NavLink>
+            <NavLink className="sidebar-section-card" to="/resume">
+              Resume
             </NavLink>
             <NavLink className="sidebar-section-card" to="/history">
               Interview History
@@ -315,7 +634,45 @@ const Dashboard = () => {
                   <option value="Intermediate">Intermediate</option>
                   <option value="Advanced">Advanced</option>
                 </select>
-                <div className="question-count-grid">
+                <label htmlFor="interview-type">Interview type</label>
+                <select id="interview-type" value={interviewType} onChange={(event) => setInterviewType(event.target.value)}>
+                  <option value="Core Subjects">Core Subjects</option>
+                  <option value="Resume-Based">Resume-Based</option>
+                  <option value="Mixed">Mixed</option>
+                </select>
+                {interviewType !== 'Core Subjects' && (
+                  <>
+                    <label htmlFor="resume-question-count">Resume questions</label>
+                    <input
+                      id="resume-question-count"
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={resumeQuestionCount}
+                      onChange={(event) => setResumeQuestionCount(Math.max(1, Math.min(10, Number(event.target.value || 1))))}
+                    />
+                    <Link className="back-link inline-link" to="/resume">Review saved resume</Link>
+                  </>
+                )}
+                <label htmlFor="interview-duration">Interview duration</label>
+                <div className="duration-control">
+                  <input
+                    id="interview-duration"
+                    type="number"
+                    min="5"
+                    max="180"
+                    step="5"
+                    value={interviewMinutes}
+                    onChange={(event) => {
+                      const value = Math.max(5, Math.min(180, Number(event.target.value || 5)));
+                      setInterviewMinutes(value);
+                      setRemainingSeconds(value * 60);
+                    }}
+                    aria-label="Interview duration in minutes"
+                  />
+                  <span>minutes</span>
+                </div>
+                {interviewType !== 'Resume-Based' && <div className="question-count-grid">
                   {Object.entries(subjectConfig).map(([subject, config]) => (
                     <label className="question-count-control" key={subject} htmlFor={`count-${subject}`}>
                       <span>
@@ -336,10 +693,14 @@ const Dashboard = () => {
                       />
                     </label>
                   ))}
-                </div>
+                </div>}
                 <div className="interview-total-row">
                   <span>Total questions</span>
-                  <strong>{Object.values(questionCounts).reduce((total, count) => total + Number(count), 0)}</strong>
+                  <strong>
+                    {interviewType === 'Resume-Based'
+                      ? resumeQuestionCount
+                      : Object.values(questionCounts).reduce((total, count) => total + Number(count), 0) + (interviewType === 'Mixed' ? Math.min(3, resumeQuestionCount) : 0)}
+                  </strong>
                 </div>
                 <button className="btn" onClick={startInterview} disabled={isStartingInterview}>
                   {isStartingInterview ? 'Starting...' : 'Begin Mock Interview'}

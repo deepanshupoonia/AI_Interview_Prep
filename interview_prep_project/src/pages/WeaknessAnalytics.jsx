@@ -27,17 +27,35 @@ const TrendChart = ({ points }) => {
     return <div className="empty-state inline-empty">Complete interviews to see score trends.</div>;
   }
 
+  const width = Math.max(360, points.length * 92);
+  const height = 220;
+  const padding = 34;
+  const chartWidth = width - padding * 2;
+  const chartHeight = height - padding * 2;
+  const getX = (index) => padding + (points.length === 1 ? chartWidth / 2 : (index / (points.length - 1)) * chartWidth);
+  const getY = (score) => padding + chartHeight - (Math.max(0, Math.min(100, score)) / 100) * chartHeight;
+  const linePoints = points.map((point, index) => `${getX(index)},${getY(point.score)}`).join(' ');
+
   return (
-    <div className="trend-chart" aria-label="Interview score trend">
-      {points.map((point) => (
-        <div className="trend-column" key={point.sessionId}>
-          <div className="trend-bar-track">
-            <div className="trend-bar" style={{ height: `${point.score}%` }} />
-          </div>
-          <strong>{point.score}</strong>
-          <span>{point.label}</span>
-        </div>
-      ))}
+    <div className="trend-chart line-trend-chart" aria-label="Interview score trend">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Line graph of interview scores">
+        <line className="trend-axis" x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} />
+        <line className="trend-axis" x1={padding} x2={padding} y1={padding} y2={height - padding} />
+        {[25, 50, 75, 100].map((tick) => (
+          <g key={tick}>
+            <line className="trend-grid-line" x1={padding} x2={width - padding} y1={getY(tick)} y2={getY(tick)} />
+            <text className="trend-y-label" x={padding - 10} y={getY(tick) + 4}>{tick}</text>
+          </g>
+        ))}
+        <polyline className="trend-line" points={linePoints} />
+        {points.map((point, index) => (
+          <g className="trend-point-group" key={point.sessionId}>
+            <circle className="trend-point" cx={getX(index)} cy={getY(point.score)} r="6" />
+            <text className="trend-score-label" x={getX(index)} y={getY(point.score) - 12}>{point.score}</text>
+            <text className="trend-x-label" x={getX(index)} y={height - 10}>{point.label}</text>
+          </g>
+        ))}
+      </svg>
     </div>
   );
 };

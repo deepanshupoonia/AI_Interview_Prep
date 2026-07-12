@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS interview_answers (
 CREATE INDEX IF NOT EXISTS idx_interview_answers_user_id
 ON interview_answers(user_id);
 
+CREATE TABLE IF NOT EXISTS resumes (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    file_name VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(120),
+    file_data BYTEA,
+    raw_text TEXT,
+    parsed JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS questions (
     id SERIAL PRIMARY KEY,
     category VARCHAR(50),

@@ -1,4 +1,8 @@
 const express = require('express');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFile } = require('child_process');
 const pool = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
 
@@ -8,10 +12,12 @@ const SUBJECT_LIMITS = {
   OOP: { label: 'Object Oriented Programming', min: 0, max: 10 },
   OS: { label: 'Operating Systems', min: 0, max: 10 },
   DBMS: { label: 'Database Management Systems', min: 0, max: 10 },
-  DSA: { label: 'Data Structures and Algorithms', min: 0, max: 5 }
+  DSA: { label: 'Data Structures and Algorithms', min: 0, max: 5 },
+  RESUME: { label: 'Resume-Based', min: 0, max: 10 }
 };
 
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
+const INTERVIEW_TYPES = ['Core Subjects', 'Resume-Based', 'Mixed'];
 const sessions = new Map();
 
 const QUESTION_BANK = {
@@ -141,26 +147,49 @@ const QUESTION_BANK = {
       keywords: ['denormalization', 'performance', 'redundancy', 'read', 'tradeoff', 'reporting']
     }
   ],
+  RESUME: [],
   DSA: [
     {
-      prompt: 'Given an array, how would you find two numbers that sum to a target?',
-      keywords: ['hash', 'map', 'array', 'target', 'sum', 'time', 'complexity']
+      problemKey: 'two-sum',
+      title: 'Two Sum',
+      prompt: 'Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.',
+      description: 'You may assume that each input has exactly one solution, and you may not use the same element twice. Return the indices in any order.',
+      constraints: ['2 <= nums.length <= 10^4', '-10^9 <= nums[i] <= 10^9', '-10^9 <= target <= 10^9', 'Exactly one valid answer exists.'],
+      keywords: ['hash', 'map', 'array', 'target', 'sum', 'time', 'complexity'],
+      questionType: 'coding',
+      testCases: [
+        { input: [[2, 7, 11, 15], 9], expected: [0, 1] },
+        { input: [[3, 2, 4], 6], expected: [1, 2] },
+        { input: [[3, 3], 6], expected: [0, 1] }
+      ]
     },
     {
-      prompt: 'Explain binary search and the conditions required to use it.',
-      keywords: ['binary', 'search', 'sorted', 'mid', 'left', 'right', 'log']
+      problemKey: 'binary-search',
+      title: 'Binary Search',
+      prompt: 'Given a sorted array of integers nums and an integer target, return the index of target. If target is not present, return -1.',
+      description: 'Your algorithm must run in O(log n) time.',
+      constraints: ['1 <= nums.length <= 10^4', 'nums is sorted in strictly increasing order.', '-10^9 <= nums[i], target <= 10^9'],
+      keywords: ['binary', 'search', 'sorted', 'mid', 'left', 'right', 'log'],
+      questionType: 'coding',
+      testCases: [
+        { input: [[-1, 0, 3, 5, 9, 12], 9], expected: 4 },
+        { input: [[-1, 0, 3, 5, 9, 12], 2], expected: -1 },
+        { input: [[5], 5], expected: 0 }
+      ]
     },
     {
-      prompt: 'How would you detect a cycle in a linked list?',
-      keywords: ['cycle', 'linked', 'list', 'slow', 'fast', 'pointer', 'floyd']
-    },
-    {
-      prompt: 'When would you use BFS instead of DFS?',
-      keywords: ['bfs', 'dfs', 'queue', 'stack', 'shortest', 'graph', 'level']
-    },
-    {
-      prompt: 'Explain dynamic programming using the climbing stairs problem.',
-      keywords: ['dynamic', 'programming', 'state', 'transition', 'base', 'memoization', 'tabulation']
+      problemKey: 'climbing-stairs',
+      title: 'Climbing Stairs',
+      prompt: 'You are climbing a staircase. It takes n steps to reach the top. Each time you can climb either 1 or 2 steps. Return the number of distinct ways to climb to the top.',
+      description: 'This is a classic dynamic programming problem. Think about the recurrence relation between smaller stair counts.',
+      constraints: ['1 <= n <= 45'],
+      keywords: ['dynamic', 'programming', 'state', 'transition', 'base', 'memoization', 'tabulation'],
+      questionType: 'coding',
+      testCases: [
+        { input: [2], expected: 2 },
+        { input: [3], expected: 3 },
+        { input: [5], expected: 8 }
+      ]
     }
   ]
 };
@@ -187,16 +216,457 @@ const shuffle = (items) => {
   return copy;
 };
 
+const CODE_TEMPLATES = {
+  javascript: {
+    'two-sum': `function solution(nums, target) {
+  // Return the indices of two numbers that add up to target.
+}`,
+    'binary-search': `function solution(nums, target) {
+  // Return the index of target, or -1 if it does not exist.
+}`,
+    'climbing-stairs': `function solution(n) {
+  // Return the number of distinct ways to climb n stairs.
+}`
+  },
+  python: {
+    'two-sum': `def solution(nums, target):
+    # Return the indices of two numbers that add up to target.
+    pass`,
+    'binary-search': `def solution(nums, target):
+    # Return the index of target, or -1 if it does not exist.
+    pass`,
+    'climbing-stairs': `def solution(n):
+    # Return the number of distinct ways to climb n stairs.
+    pass`
+  },
+  cpp: {
+    'two-sum': `#include <bits/stdc++.h>
+using namespace std;
+
+vector<int> solution(vector<int> nums, int target) {
+  // Return the indices of two numbers that add up to target.
+}`,
+    'binary-search': `#include <bits/stdc++.h>
+using namespace std;
+
+int solution(vector<int> nums, int target) {
+  // Return the index of target, or -1 if it does not exist.
+}`,
+    'climbing-stairs': `#include <bits/stdc++.h>
+using namespace std;
+
+int solution(int n) {
+  // Return the number of distinct ways to climb n stairs.
+}`
+  },
+  c: {
+    'two-sum': `#include <stdlib.h>
+
+int* solution(int* nums, int numsSize, int target, int* returnSize) {
+  // Return a malloc'ed array of two indices and set *returnSize = 2.
+}`,
+    'binary-search': `int solution(int* nums, int numsSize, int target) {
+  // Return the index of target, or -1 if it does not exist.
+}`,
+    'climbing-stairs': `int solution(int n) {
+  // Return the number of distinct ways to climb n stairs.
+}`
+  },
+  java: {
+    'two-sum': `class Solution {
+  public int[] solution(int[] nums, int target) {
+    // Return the indices of two numbers that add up to target.
+    return new int[]{};
+  }
+}`,
+    'binary-search': `class Solution {
+  public int solution(int[] nums, int target) {
+    // Return the index of target, or -1 if it does not exist.
+    return -1;
+  }
+}`,
+    'climbing-stairs': `class Solution {
+  public int solution(int n) {
+    // Return the number of distinct ways to climb n stairs.
+    return 0;
+  }
+}`
+  }
+};
+
+const getStarterCode = (problemKey, language = 'python') => CODE_TEMPLATES[language]?.[problemKey] || '';
+
+const execFileAsync = (file, args, options = {}) => new Promise((resolve) => {
+  execFile(file, args, { timeout: 5000, windowsHide: true, ...options }, (error, stdout, stderr) => {
+    resolve({
+      ok: !error,
+      error,
+      stdout: String(stdout || ''),
+      stderr: String(stderr || '')
+    });
+  });
+});
+
+const arrayLiteral = (items) => `{${items.join(', ')}}`;
+
+const normalizeRunOutput = (text) => {
+  try {
+    return JSON.parse(text.trim());
+  } catch {
+    return [];
+  }
+};
+
+const buildPythonHarness = ({ code, question }) => `${code}
+
+import json
+
+tests = ${JSON.stringify(question.testCases)}
+problem_key = ${JSON.stringify(question.problemKey)}
+results = []
+for index, case in enumerate(tests):
+    try:
+        actual = solution(*case["input"])
+        passed = sorted(actual) == sorted(case["expected"]) if problem_key == "two-sum" else actual == case["expected"]
+        results.append({"index": index, "input": case["input"], "expected": case["expected"], "actual": actual, "passed": passed})
+    except Exception as error:
+        results.append({"index": index, "input": case["input"], "expected": case["expected"], "actual": str(error), "passed": False})
+
+print(json.dumps(results))
+`;
+
+const buildCppRunner = (problemKey) => {
+  if (problemKey === 'two-sum') {
+    return `
+void runTest(int index, vector<int> nums, int target, vector<int> expected) {
+  vector<int> actual = solution(nums, target);
+  vector<int> sortedActual = actual;
+  vector<int> sortedExpected = expected;
+  sort(sortedActual.begin(), sortedActual.end());
+  sort(sortedExpected.begin(), sortedExpected.end());
+  printResult(index, vecToJson(expected), vecToJson(actual), sortedActual == sortedExpected);
+}
+`;
+  }
+
+  if (problemKey === 'binary-search') {
+    return `
+void runTest(int index, vector<int> nums, int target, int expected) {
+  int actual = solution(nums, target);
+  printResult(index, to_string(expected), to_string(actual), actual == expected);
+}
+`;
+  }
+
+  return `
+void runTest(int index, int input, int expected) {
+  int actual = solution(input);
+  printResult(index, to_string(expected), to_string(actual), actual == expected);
+}
+`;
+};
+
+const buildCppHarness = ({ code, question }) => {
+  const tests = question.testCases.map((testCase, index) => {
+    if (question.problemKey === 'two-sum') {
+      return `runTest(${index}, vector<int>${arrayLiteral(testCase.input[0])}, ${testCase.input[1]}, vector<int>${arrayLiteral(testCase.expected)});`;
+    }
+    if (question.problemKey === 'binary-search') {
+      return `runTest(${index}, vector<int>${arrayLiteral(testCase.input[0])}, ${testCase.input[1]}, ${testCase.expected});`;
+    }
+    return `runTest(${index}, ${testCase.input[0]}, ${testCase.expected});`;
+  }).join('\n  ');
+
+  return `${code}
+
+string vecToJson(vector<int> values) {
+  string out = "[";
+  for (int i = 0; i < (int)values.size(); i++) {
+    if (i) out += ",";
+    out += to_string(values[i]);
+  }
+  out += "]";
+  return out;
+}
+
+void printResult(int index, string expected, string actual, bool passed) {
+  cout << (index ? "," : "") << "{\\"index\\":" << index << ",\\"expected\\":" << expected << ",\\"actual\\":" << actual << ",\\"passed\\":" << (passed ? "true" : "false") << "}";
+}
+
+${buildCppRunner(question.problemKey)}
+
+int main() {
+  cout << "[";
+  ${tests}
+  cout << "]";
+  return 0;
+}
+`;
+};
+
+const buildCRunner = (problemKey) => {
+  if (problemKey === 'two-sum') {
+    return `
+void runTest(int index, int* nums, int numsSize, int target, int* expected, int expectedSize) {
+  int returnSize = 0;
+  int* actual = solution(nums, numsSize, target, &returnSize);
+  int* actualCopy = malloc(sizeof(int) * returnSize);
+  int* expectedCopy = malloc(sizeof(int) * expectedSize);
+  for (int i = 0; i < returnSize; i++) actualCopy[i] = actual[i];
+  for (int i = 0; i < expectedSize; i++) expectedCopy[i] = expected[i];
+  sortArray(actualCopy, returnSize);
+  sortArray(expectedCopy, expectedSize);
+  bool passed = arraysEqual(actualCopy, returnSize, expectedCopy, expectedSize);
+  printPrefix(index);
+  printArray(expected, expectedSize);
+  printf(",\\"actual\\":");
+  printArray(actual, returnSize);
+  printf(",\\"passed\\":%s}", passed ? "true" : "false");
+  free(actualCopy);
+  free(expectedCopy);
+  free(actual);
+}
+`;
+  }
+
+  if (problemKey === 'binary-search') {
+    return `
+void runTest(int index, int* nums, int numsSize, int target, int expected) {
+  int actual = solution(nums, numsSize, target);
+  printPrefix(index);
+  printf("%d,\\"actual\\":%d,\\"passed\\":%s}", expected, actual, actual == expected ? "true" : "false");
+}
+`;
+  }
+
+  return `
+void runTest(int index, int input, int expected) {
+  int actual = solution(input);
+  printPrefix(index);
+  printf("%d,\\"actual\\":%d,\\"passed\\":%s}", expected, actual, actual == expected ? "true" : "false");
+}
+`;
+};
+
+const buildCHarness = ({ code, question }) => {
+  const tests = question.testCases.map((testCase, index) => {
+    if (question.problemKey === 'two-sum') {
+      return `int nums${index}[] = ${arrayLiteral(testCase.input[0])}; int expected${index}[] = ${arrayLiteral(testCase.expected)}; runTest(${index}, nums${index}, ${testCase.input[0].length}, ${testCase.input[1]}, expected${index}, ${testCase.expected.length});`;
+    }
+    if (question.problemKey === 'binary-search') {
+      return `int nums${index}[] = ${arrayLiteral(testCase.input[0])}; runTest(${index}, nums${index}, ${testCase.input[0].length}, ${testCase.input[1]}, ${testCase.expected});`;
+    }
+    return `runTest(${index}, ${testCase.input[0]}, ${testCase.expected});`;
+  }).join('\n  ');
+
+  return `#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+${code}
+
+void printArray(int* values, int size) {
+  printf("[");
+  for (int i = 0; i < size; i++) {
+    if (i) printf(",");
+    printf("%d", values[i]);
+  }
+  printf("]");
+}
+
+bool arraysEqual(int* a, int aSize, int* b, int bSize) {
+  if (aSize != bSize) return false;
+  for (int i = 0; i < aSize; i++) if (a[i] != b[i]) return false;
+  return true;
+}
+
+void sortArray(int* values, int size) {
+  for (int i = 0; i < size; i++) {
+    for (int j = i + 1; j < size; j++) {
+      if (values[j] < values[i]) {
+        int temp = values[i];
+        values[i] = values[j];
+        values[j] = temp;
+      }
+    }
+  }
+}
+
+void printPrefix(int index) {
+  if (index) printf(",");
+  printf("{\\"index\\":%d,\\"expected\\":", index);
+}
+
+${buildCRunner(question.problemKey)}
+
+int main() {
+  printf("[");
+  ${tests}
+  printf("]");
+  return 0;
+}
+`;
+};
+
+const buildJavaRunner = (problemKey) => {
+  if (problemKey === 'two-sum') {
+    return `
+  static void runTest(int index, int[] nums, int target, int[] expected) {
+    int[] actual = candidate.solution(nums, target);
+    int[] sortedActual = actual.clone();
+    int[] sortedExpected = expected.clone();
+    Arrays.sort(sortedActual);
+    Arrays.sort(sortedExpected);
+    printResult(index, arrayJson(expected), arrayJson(actual), Arrays.equals(sortedActual, sortedExpected));
+  }
+`;
+  }
+
+  if (problemKey === 'binary-search') {
+    return `
+  static void runTest(int index, int[] nums, int target, int expected) {
+    int actual = candidate.solution(nums, target);
+    printResult(index, String.valueOf(expected), String.valueOf(actual), actual == expected);
+  }
+`;
+  }
+
+  return `
+  static void runTest(int index, int input, int expected) {
+    int actual = candidate.solution(input);
+    printResult(index, String.valueOf(expected), String.valueOf(actual), actual == expected);
+  }
+`;
+};
+
+const buildJavaHarness = ({ code, question }) => {
+  const tests = question.testCases.map((testCase, index) => {
+    if (question.problemKey === 'two-sum') {
+      return `runTest(${index}, new int[]${arrayLiteral(testCase.input[0])}, ${testCase.input[1]}, new int[]${arrayLiteral(testCase.expected)});`;
+    }
+    if (question.problemKey === 'binary-search') {
+      return `runTest(${index}, new int[]${arrayLiteral(testCase.input[0])}, ${testCase.input[1]}, ${testCase.expected});`;
+    }
+    return `runTest(${index}, ${testCase.input[0]}, ${testCase.expected});`;
+  }).join('\n    ');
+
+  return `import java.util.*;
+${code}
+
+public class Main {
+  static Solution candidate = new Solution();
+
+  static String arrayJson(int[] values) {
+    StringBuilder out = new StringBuilder("[");
+    for (int i = 0; i < values.length; i++) {
+      if (i > 0) out.append(",");
+      out.append(values[i]);
+    }
+    return out.append("]").toString();
+  }
+
+  static void printResult(int index, String expected, String actual, boolean passed) {
+    if (index > 0) System.out.print(",");
+    System.out.print("{\\"index\\":" + index + ",\\"expected\\":" + expected + ",\\"actual\\":" + actual + ",\\"passed\\":" + passed + "}");
+  }
+
+${buildJavaRunner(question.problemKey)}
+
+  public static void main(String[] args) {
+    System.out.print("[");
+    ${tests}
+    System.out.print("]");
+  }
+}
+`;
+};
+
+const runCodeForQuestion = async ({ language, code, question }) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'interview-code-'));
+
+  try {
+    if (language === 'python') {
+      const filePath = path.join(tempDir, 'solution.py');
+      fs.writeFileSync(filePath, buildPythonHarness({ code, question }));
+      const run = await execFileAsync('python', [filePath]);
+      return run.ok ? { ok: true, results: normalizeRunOutput(run.stdout) } : { ok: false, message: run.stderr || run.error?.message || 'Python execution failed.' };
+    }
+
+    if (language === 'cpp') {
+      const sourcePath = path.join(tempDir, 'solution.cpp');
+      const exePath = path.join(tempDir, 'solution.exe');
+      fs.writeFileSync(sourcePath, buildCppHarness({ code, question }));
+      const compile = await execFileAsync('g++', ['-std=c++17', sourcePath, '-o', exePath]);
+      if (!compile.ok) return { ok: false, message: compile.stderr || compile.error?.message || 'C++ compilation failed.' };
+      const run = await execFileAsync(exePath, []);
+      return run.ok ? { ok: true, results: normalizeRunOutput(run.stdout) } : { ok: false, message: run.stderr || run.error?.message || 'C++ execution failed.' };
+    }
+
+    if (language === 'c') {
+      const sourcePath = path.join(tempDir, 'solution.c');
+      const exePath = path.join(tempDir, 'solution.exe');
+      fs.writeFileSync(sourcePath, buildCHarness({ code, question }));
+      const compile = await execFileAsync('gcc', ['-std=c11', sourcePath, '-o', exePath]);
+      if (!compile.ok) return { ok: false, message: compile.stderr || compile.error?.message || 'C compilation failed.' };
+      const run = await execFileAsync(exePath, []);
+      return run.ok ? { ok: true, results: normalizeRunOutput(run.stdout) } : { ok: false, message: run.stderr || run.error?.message || 'C execution failed.' };
+    }
+
+    if (language === 'java') {
+      const sourcePath = path.join(tempDir, 'Main.java');
+      fs.writeFileSync(sourcePath, buildJavaHarness({ code, question }));
+      const compile = await execFileAsync('javac', [sourcePath]);
+      if (!compile.ok) return { ok: false, message: compile.stderr || compile.error?.message || 'Java compilation failed.' };
+      const run = await execFileAsync('java', ['-cp', tempDir, 'Main']);
+      return run.ok ? { ok: true, results: normalizeRunOutput(run.stdout) } : { ok: false, message: run.stderr || run.error?.message || 'Java execution failed.' };
+    }
+
+    return { ok: false, message: 'Unsupported language.' };
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+};
+
 const buildLocalQuestions = ({ level, counts }) => Object.keys(SUBJECT_LIMITS).flatMap((subject) => (
   shuffle(QUESTION_BANK[subject]).slice(0, counts[subject]).map((question, index) => ({
     id: `${subject}-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
     subject,
     subjectLabel: SUBJECT_LIMITS[subject].label,
     level,
-    questionText: `${question.prompt} Answer at a ${level.toLowerCase()} interview depth.`,
-    keywords: question.keywords
+    questionText: question.questionType === 'coding'
+      ? question.prompt
+      : `${question.prompt} Answer at a ${level.toLowerCase()} interview depth.`,
+    keywords: question.keywords,
+    questionType: question.questionType || 'text',
+    problemKey: question.problemKey || null,
+    title: question.title || '',
+    description: question.description || '',
+    constraints: question.constraints || [],
+    codeTemplates: question.problemKey ? Object.fromEntries(Object.keys(CODE_TEMPLATES).map((language) => [language, getStarterCode(question.problemKey, language)])) : {},
+    starterCode: question.problemKey ? getStarterCode(question.problemKey, 'python') : '',
+    testCases: question.testCases || []
   }))
 ));
+
+const buildLocalSubjectQuestions = ({ level, subject, count }) => (
+  shuffle(QUESTION_BANK[subject]).slice(0, count).map((question, index) => ({
+    id: `${subject}-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+    subject,
+    subjectLabel: SUBJECT_LIMITS[subject].label,
+    level,
+    questionText: question.questionType === 'coding'
+      ? question.prompt
+      : `${question.prompt} Answer at a ${level.toLowerCase()} interview depth.`,
+    keywords: question.keywords,
+    questionType: question.questionType || 'text',
+    problemKey: question.problemKey || null,
+    title: question.title || '',
+    description: question.description || '',
+    constraints: question.constraints || [],
+    codeTemplates: question.problemKey ? Object.fromEntries(Object.keys(CODE_TEMPLATES).map((language) => [language, getStarterCode(question.problemKey, language)])) : {},
+    starterCode: question.problemKey ? getStarterCode(question.problemKey, 'python') : '',
+    testCases: question.testCases || []
+  }))
+);
 
 const parseJsonObject = (text) => {
   const match = text.match(/\{[\s\S]*\}/);
@@ -242,7 +712,7 @@ const generateAiQuestions = async ({ level, counts }) => {
     },
     {
       role: 'user',
-      content: `Create unique ${level} questions for these counts: ${requested}. Use subjects OOP, OS, DBMS, DSA. Return {"questions":[{"subject":"OOP","questionText":"...","keywords":["..."]}]}. Keywords must be short lowercase scoring concepts.`
+      content: `Create unique ${level} questions for these counts: ${requested}. Use subjects OOP, OS, DBMS, DSA. For DSA prefer coding questions in JavaScript. Return {"questions":[{"subject":"OOP","questionText":"...","keywords":["..."],"questionType":"text"}]}. Keywords must be short lowercase scoring concepts.`
     }
   ]);
 
@@ -259,11 +729,47 @@ const generateAiQuestions = async ({ level, counts }) => {
       subjectLabel: SUBJECT_LIMITS[question.subject].label,
       level,
       questionText: question.questionText,
-      keywords: Array.isArray(question.keywords) ? question.keywords : []
+      keywords: Array.isArray(question.keywords) ? question.keywords : [],
+      questionType: question.questionType === 'coding' ? 'coding' : 'text',
+      starterCode: question.starterCode || '',
+      testCases: Array.isArray(question.testCases) ? question.testCases : []
     }));
 };
 
 const evaluateLocally = ({ answer, question }) => {
+  if (question.questionType === 'coding') {
+    let parsed = null;
+
+    try {
+      parsed = JSON.parse(answer);
+    } catch {
+      parsed = null;
+    }
+
+    const code = String(parsed?.code || answer);
+    const testResults = Array.isArray(parsed?.testResults) ? parsed.testResults : [];
+    const passed = testResults.filter((result) => result.passed).length;
+    const total = testResults.length || question.testCases?.length || 0;
+    const passRatio = total ? passed / total : 0;
+    const hasFunction = /solution\s*\(/.test(code);
+    const mentionsComplexity = /time|space|complexity|o\(/i.test(code);
+    const score = Math.max(1, Math.min(10, Math.round((passRatio * 7) + (hasFunction ? 2 : 0) + (mentionsComplexity ? 1 : 0))));
+
+    return {
+      score,
+      feedback: passRatio === 1
+        ? 'Code passed the visible test cases. Review complexity, edge cases, and clarity before treating it as interview-ready.'
+        : `Code passed ${passed} of ${total || question.testCases?.length || 0} visible test cases. Fix failing cases before moving on.`,
+      strengths: [
+        passRatio === 1 ? 'Visible test cases passed.' : `Passed ${passed} visible test ${passed === 1 ? 'case' : 'cases'}.`,
+        hasFunction ? 'Solution function is present.' : 'Attempted a coding response.'
+      ],
+      improvements: passRatio === 1
+        ? ['Explain time and space complexity in comments or after the code.', 'Consider hidden edge cases beyond the visible tests.']
+        : ['Use the test output to fix incorrect return values or runtime errors.', 'Check edge cases and input shape carefully.']
+    };
+  }
+
   const normalizedAnswer = answer.toLowerCase();
   const words = normalizedAnswer.split(/\W+/).filter(Boolean);
   const uniqueWords = new Set(words);
@@ -308,6 +814,10 @@ const evaluateLocally = ({ answer, question }) => {
 };
 
 const evaluateWithAi = async ({ answer, question }) => {
+  const evaluationPrompt = question.questionType === 'coding'
+    ? `Coding question: ${question.questionText}\nCandidate submission JSON: ${answer}\nEvaluate code correctness, visible test results, complexity, edge cases, and readability from 1 to 10. Return {"score":number,"feedback":"...","strengths":["..."],"improvements":["..."]}.`
+    : `Question: ${question.questionText}\nCandidate answer: ${answer}\nEvaluate from 1 to 10. Return {"score":number,"feedback":"...","strengths":["..."],"improvements":["..."]}.`;
+
   const content = await callOpenAI([
     {
       role: 'system',
@@ -315,7 +825,7 @@ const evaluateWithAi = async ({ answer, question }) => {
     },
     {
       role: 'user',
-      content: `Question: ${question.questionText}\nCandidate answer: ${answer}\nEvaluate from 1 to 10. Return {"score":number,"feedback":"...","strengths":["..."],"improvements":["..."]}.`
+      content: evaluationPrompt
     }
   ], 0.2);
 
@@ -436,6 +946,14 @@ const getCurrentQuestion = (session) => {
     subjectLabel: question.subjectLabel,
     level: question.level,
     questionText: question.questionText,
+    questionType: question.questionType || 'text',
+    problemKey: question.problemKey || null,
+    title: question.title || '',
+    description: question.description || '',
+    constraints: question.constraints || [],
+    codeTemplates: question.codeTemplates || {},
+    starterCode: question.starterCode || '',
+    testCases: question.testCases || [],
     isFollowUp: Boolean(question.isFollowUp),
     parentQuestionId: question.parentQuestionId || null,
     number: session.currentIndex + 1,
@@ -525,38 +1043,159 @@ const buildRating = ({ interviewScore, sheetScore }) => {
 
 const formatTrendDate = (value) => new Date(value).toISOString().slice(0, 10);
 
-router.post('/start', authMiddleware, async (req, res) => {
-  const level = LEVELS.includes(req.body.level) ? req.body.level : null;
-  const counts = {};
+const getSavedResume = async (userId) => {
+  const result = await pool.query('SELECT parsed FROM resumes WHERE user_id = $1', [userId]);
+  return result.rows[0]?.parsed || null;
+};
 
-  Object.keys(SUBJECT_LIMITS).forEach((subject) => {
-    counts[subject] = clampCount(req.body.counts?.[subject] ?? 0, subject);
+const firstItems = (items, count) => (Array.isArray(items) ? items.filter(Boolean).slice(0, count) : []);
+
+const buildResumeQuestions = ({ resume, level, count }) => {
+  const skills = firstItems(resume?.skills, 8);
+  const projects = firstItems(resume?.projects, 5);
+  const experience = firstItems(resume?.experience, 5);
+  const achievements = firstItems(resume?.achievements, 4);
+  const education = firstItems(resume?.education, 3);
+  const questions = [];
+
+  projects.forEach((project, index) => {
+    questions.push({
+      id: `resume-project-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+      subject: 'RESUME',
+      subjectLabel: 'Resume-Based',
+      level,
+      questionText: `Your resume mentions this project: "${project}". Explain the problem, your exact contribution, the technology choices, one challenge, and the measurable outcome.`,
+      keywords: ['project', 'contribution', 'technology', 'challenge', 'outcome', ...skills.slice(0, 4)]
+    });
   });
 
-  if (!level || Object.values(counts).some((count) => count === null)) {
+  experience.forEach((item, index) => {
+    questions.push({
+      id: `resume-experience-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+      subject: 'RESUME',
+      subjectLabel: 'Resume-Based',
+      level,
+      questionText: `Walk me through this experience from your resume: "${item}". What did you own, how did you make decisions, and what would you improve if you did it again?`,
+      keywords: ['experience', 'ownership', 'decision', 'impact', 'improve', ...skills.slice(0, 4)]
+    });
+  });
+
+  if (skills.length) {
+    questions.push({
+      id: `resume-skills-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      subject: 'RESUME',
+      subjectLabel: 'Resume-Based',
+      level,
+      questionText: `Your resume lists these skills: ${skills.join(', ')}. Pick two and explain where you used them deeply, including tradeoffs and edge cases.`,
+      keywords: ['skills', 'tradeoff', 'edge', 'used', ...skills.slice(0, 8)]
+    });
+  }
+
+  achievements.forEach((item, index) => {
+    questions.push({
+      id: `resume-achievement-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+      subject: 'RESUME',
+      subjectLabel: 'Resume-Based',
+      level,
+      questionText: `Tell me about this achievement: "${item}". Why was it meaningful, what was difficult, and what does it show about your strengths?`,
+      keywords: ['achievement', 'difficult', 'meaningful', 'strength', 'result']
+    });
+  });
+
+  if (education.length) {
+    questions.push({
+      id: `resume-education-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      subject: 'RESUME',
+      subjectLabel: 'Resume-Based',
+      level,
+      questionText: `Based on your education entry "${education[0]}", which CS fundamentals are strongest for you and which one do you still need to improve?`,
+      keywords: ['education', 'fundamentals', 'strong', 'improve']
+    });
+  }
+
+  if (!questions.length) {
+    questions.push({
+      id: `resume-general-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      subject: 'RESUME',
+      subjectLabel: 'Resume-Based',
+      level,
+      questionText: 'Summarize your resume, then explain the strongest project or experience you want an interviewer to remember.',
+      keywords: ['resume', 'project', 'experience', 'impact', 'skills']
+    });
+  }
+
+  return shuffle(questions).slice(0, count);
+};
+
+router.post('/start', authMiddleware, async (req, res) => {
+  const level = LEVELS.includes(req.body.level) ? req.body.level : null;
+  const interviewType = INTERVIEW_TYPES.includes(req.body.interviewType) ? req.body.interviewType : 'Core Subjects';
+  const resumeQuestionCount = Math.max(1, Math.min(10, Number(req.body.resumeQuestionCount || 3)));
+  const counts = {};
+
+  ['OOP', 'OS', 'DBMS', 'DSA'].forEach((subject) => {
+    counts[subject] = clampCount(req.body.counts?.[subject] ?? 0, subject);
+  });
+  counts.RESUME = interviewType === 'Resume-Based'
+    ? resumeQuestionCount
+    : interviewType === 'Mixed'
+      ? Math.min(3, resumeQuestionCount)
+      : 0;
+
+  if (!level || ['OOP', 'OS', 'DBMS', 'DSA'].some((subject) => counts[subject] === null)) {
     return res.status(400).json({ message: 'Choose a valid level and question count.' });
   }
 
-  const totalQuestions = Object.values(counts).reduce((total, count) => total + count, 0);
+  const coreQuestionCount = ['OOP', 'OS', 'DBMS', 'DSA'].reduce((total, subject) => total + counts[subject], 0);
+  const totalQuestions = interviewType === 'Resume-Based'
+    ? counts.RESUME
+    : coreQuestionCount + counts.RESUME;
 
   if (totalQuestions < 1) {
     return res.status(400).json({ message: 'Select at least one question.' });
   }
 
+  if (interviewType === 'Resume-Based' && counts.RESUME < 1) {
+    return res.status(400).json({ message: 'Choose at least one resume-based question.' });
+  }
+
   try {
     let questions = null;
+    let resumeQuestions = [];
 
-    try {
-      questions = await generateAiQuestions({ level, counts });
-    } catch (err) {
-      console.error(`AI question generation failed: ${err.message}`);
+    if (interviewType !== 'Core Subjects') {
+      const resume = await getSavedResume(req.user.id);
+
+      if (!resume) {
+        return res.status(400).json({ message: 'Upload and save a resume before starting a resume-based interview.' });
+      }
+
+      resumeQuestions = buildResumeQuestions({ resume, level, count: counts.RESUME });
     }
 
-    if (!questions || questions.length !== totalQuestions) {
-      questions = buildLocalQuestions({ level, counts });
+    const coreCounts = interviewType === 'Resume-Based'
+      ? { OOP: 0, OS: 0, DBMS: 0, DSA: 0 }
+      : { OOP: counts.OOP, OS: counts.OS, DBMS: counts.DBMS, DSA: counts.DSA };
+
+    if (coreQuestionCount > 0 && interviewType !== 'Resume-Based') {
+      try {
+        questions = await generateAiQuestions({ level, counts: coreCounts });
+      } catch (err) {
+        console.error(`AI question generation failed: ${err.message}`);
+      }
     }
 
-    const orderedQuestions = shuffle(questions);
+    if (!questions || questions.length !== coreQuestionCount) {
+      questions = buildLocalQuestions({ level, counts: coreCounts });
+    } else if (coreCounts.DSA > 0) {
+      const localDsaQuestions = buildLocalSubjectQuestions({ level, subject: 'DSA', count: coreCounts.DSA });
+      questions = [
+        ...questions.filter((question) => question.subject !== 'DSA'),
+        ...localDsaQuestions
+      ];
+    }
+
+    const orderedQuestions = shuffle([...questions, ...resumeQuestions]);
     const client = await pool.connect();
     let sessionId;
     let interviewId;
@@ -575,7 +1214,7 @@ router.post('/start', authMiddleware, async (req, res) => {
         `INSERT INTO interview_sessions (user_id, interview_id, type, level, total_questions)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id`,
-        [req.user.id, interviewId, 'Mixed', level, orderedQuestions.length]
+        [req.user.id, interviewId, interviewType, level, orderedQuestions.length]
       );
       sessionId = sessionResult.rows[0].id;
 
@@ -616,6 +1255,7 @@ router.post('/start', authMiddleware, async (req, res) => {
       interviewId,
       userId: req.user.id,
       level,
+      interviewType,
       counts,
       currentIndex: 0,
       questions: persistedQuestions,
@@ -630,6 +1270,7 @@ router.post('/start', authMiddleware, async (req, res) => {
     res.status(201).json({
       interviewId: session.id,
       level,
+      interviewType,
       totalQuestions,
       question: getCurrentQuestion(session),
       provider: process.env.OPENAI_API_KEY ? 'ai' : 'local'
@@ -637,6 +1278,60 @@ router.post('/start', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ message: 'Server error. Check that PostgreSQL is running and the database tables are created.' });
+  }
+});
+
+router.post('/:id/run-code', authMiddleware, async (req, res) => {
+  const session = sessions.get(String(req.params.id));
+  const language = String(req.body.language || '').toLowerCase();
+  const code = String(req.body.code || '');
+  const testCases = Array.isArray(req.body.testCases) && req.body.testCases.length
+    ? req.body.testCases
+    : null;
+
+  if (!session || session.userId !== req.user.id) {
+    return res.status(404).json({ message: 'Interview session not found. Please start a new interview.' });
+  }
+
+  const question = session.questions[session.currentIndex];
+
+  if (!question || question.questionType !== 'coding') {
+    return res.status(400).json({ message: 'Current question is not a coding question.' });
+  }
+
+  if (!['c', 'cpp', 'python', 'java'].includes(language)) {
+    return res.status(400).json({ message: 'Choose C, C++, Python, or Java.' });
+  }
+
+  if (!code.trim()) {
+    return res.status(400).json({ message: 'Write code before running test cases.' });
+  }
+
+  try {
+    const result = await runCodeForQuestion({
+      language,
+      code,
+      question: {
+        ...question,
+        testCases: testCases || question.testCases
+      }
+    });
+
+    if (!result.ok) {
+      return res.status(200).json({
+        ok: false,
+        message: result.message,
+        results: []
+      });
+    }
+
+    res.json({
+      ok: true,
+      message: `${result.results.filter((item) => item.passed).length} of ${result.results.length} visible tests passed.`,
+      results: result.results
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Unable to run code.' });
   }
 });
 

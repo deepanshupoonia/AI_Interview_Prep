@@ -49,13 +49,17 @@ export const preparationSections = [
     title: 'OS',
     description: 'Cover operating system fundamentals asked in technical rounds.',
     meta: 'CS core',
-    subsections: ['Processes', 'Threads', 'Scheduling', 'Deadlocks', 'Memory', 'File Systems'],
+    subsections: ['Overview', 'Processes', 'Threads', 'Deadlocks', 'Memory', 'Interview Questions'],
     contentTitle: 'Operating Systems Tracker',
-    contentDescription: 'Track OS fundamentals and common interview explanations.',
+    contentDescription: 'Track OS fundamentals and open the uploaded chapter-wise interview preparation material.',
     items: [
-      { id: 'os-process-thread', title: 'Process vs thread', type: 'Concept', difficulty: 'Core', subsection: 'Processes' },
-      { id: 'os-deadlock', title: 'Deadlock conditions and prevention', type: 'Concept', difficulty: 'Medium', subsection: 'Deadlocks' },
-      { id: 'os-paging', title: 'Paging and virtual memory', type: 'Concept', difficulty: 'Medium', subsection: 'Memory' }
+      { id: 'os-chapterwise', title: 'OS Interview Prep Chapterwise', type: 'Document', difficulty: 'Complete', subsection: 'Overview', filePath: '/materials/OS_Interview_Prep_Chapterwise.docx' },
+      { id: 'os-introduction-material', title: 'Introduction to Operating Systems', type: 'Document', difficulty: 'Core', subsection: 'Overview', filePath: '/materials/01_Introduction_OS_Interview_Prep.docx' },
+      { id: 'os-process-scheduling-material', title: 'Processes and Scheduling', type: 'Document', difficulty: 'Core', subsection: 'Processes', filePath: '/materials/02_Processes_and_Scheduling_OS_Interview_Prep.docx' },
+      { id: 'os-threads-concurrency-material', title: 'Threads and Concurrency', type: 'Document', difficulty: 'Medium', subsection: 'Threads', filePath: '/materials/03_Threads_and_Concurrency_OS_Interview_Prep.docx' },
+      { id: 'os-deadlock-material', title: 'Deadlock', type: 'Document', difficulty: 'Medium', subsection: 'Deadlocks', filePath: '/materials/04_Deadlock_OS_Interview_Prep.docx' },
+      { id: 'os-memory-management-material', title: 'Memory Management', type: 'Document', difficulty: 'Medium', subsection: 'Memory', filePath: '/materials/05_Memory_Management_OS_Interview_Prep.docx' },
+      { id: 'os-interview-questions-material', title: 'OS Interview Questions', type: 'Document', difficulty: 'Practice', subsection: 'Interview Questions', filePath: '/materials/06_Interview_Questions_OS_Interview_Prep.docx' }
     ]
   },
   {
