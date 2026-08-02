@@ -9,24 +9,36 @@ const CSV_URL = process.env.CSV_URL;
 const COMPANY = process.env.COMPANY || 'Google';
 
 const COMPANY_TABLES = {
+  Apple: 'apple_questions',
   Amazon: 'amazon_questions',
   Arista: 'arista_questions',
-  Google: 'google_questions'
+  Flipkart: 'flipkart_questions',
+  Google: 'google_questions',
+  Intel: 'intel_questions',
+  Meesho: 'meesho_questions',
+  Nvidia: 'nvidia_questions',
+  Salesforce: 'salesforce_questions'
 };
 
 const BUNDLED_IMPORTS = [
+  { company: 'Apple', csvUrl: 'https://raw.githubusercontent.com/krishnadey30/Leetcode-Questions-CompanyWise/master/apple_alltime.csv' },
   { company: 'Amazon', csvPath: path.join(DATA_DIR, 'amazon_alltime.csv') },
   { company: 'Arista', csvPath: path.join(DATA_DIR, 'arista_alltime.csv') },
-  { company: 'Google', csvPath: path.join(DATA_DIR, 'google_1year.csv') }
+  { company: 'Flipkart', csvUrl: 'https://raw.githubusercontent.com/krishnadey30/Leetcode-Questions-CompanyWise/master/flipkart_alltime.csv' },
+  { company: 'Google', csvPath: path.join(DATA_DIR, 'google_1year.csv') },
+  { company: 'Intel', csvUrl: 'https://raw.githubusercontent.com/krishnadey30/Leetcode-Questions-CompanyWise/master/intel_alltime.csv' },
+  { company: 'Meesho', csvUrl: 'https://raw.githubusercontent.com/krishnadey30/Leetcode-Questions-CompanyWise/master/meesho_alltime.csv' },
+  { company: 'Nvidia', csvUrl: 'https://raw.githubusercontent.com/krishnadey30/Leetcode-Questions-CompanyWise/master/nvidia_alltime.csv' },
+  { company: 'Salesforce', csvUrl: 'https://raw.githubusercontent.com/krishnadey30/Leetcode-Questions-CompanyWise/master/salesforce_alltime.csv' }
 ];
 
-const readCsv = (csvPath = CSV_PATH) => new Promise((resolve, reject) => {
-  if (!CSV_URL) {
+const readCsv = (csvPath = CSV_PATH, csvUrl = CSV_URL) => new Promise((resolve, reject) => {
+  if (!csvUrl) {
     resolve(fs.readFileSync(csvPath, 'utf8'));
     return;
   }
 
-  https.get(CSV_URL, (response) => {
+  https.get(csvUrl, (response) => {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       reject(new Error(`CSV download failed with status ${response.statusCode}`));
       response.resume();
@@ -119,14 +131,14 @@ const ensureLeetcodeTables = async () => {
   }
 };
 
-const importQuestions = async ({ company = COMPANY, csvPath = CSV_PATH } = {}) => {
+const importQuestions = async ({ company = COMPANY, csvPath = CSV_PATH, csvUrl = CSV_URL } = {}) => {
   const tableName = COMPANY_TABLES[company];
 
   if (!tableName) {
     throw new Error(`Unsupported company "${company}". Add it to COMPANY_TABLES before importing.`);
   }
 
-  const csv = (await readCsv(csvPath)).trim();
+  const csv = (await readCsv(csvPath, csvUrl)).trim();
   const lines = csv.split(/\r?\n/);
   const rows = lines.slice(1);
 
@@ -203,8 +215,37 @@ const run = async () => {
   await pool.end();
 };
 
-run().catch(async (error) => {
-  console.error(error);
-  await pool.end();
-  process.exit(1);
-});
+const seedAllCompanies = async () => {
+  await ensureLeetcodeTables();
+
+  const results = [];
+
+  for (const importConfig of BUNDLED_IMPORTS) {
+    try {
+      await importQuestions(importConfig);
+      results.push({ company: importConfig.company, ok: true });
+    } catch (error) {
+      console.warn(`Skipping ${importConfig.company}: ${error.message}`);
+      results.push({ company: importConfig.company, ok: false, error: error.message });
+    }
+  }
+
+  return results;
+};
+
+if (require.main === module) {
+  run().catch(async (error) => {
+    console.error(error);
+    await pool.end();
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  BUNDLED_IMPORTS,
+  COMPANY_TABLES,
+  ensureLeetcodeTables,
+  importQuestions,
+  run,
+  seedAllCompanies
+};

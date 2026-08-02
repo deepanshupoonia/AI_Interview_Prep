@@ -7,9 +7,9 @@ export const preparationSections = [
     title: 'DSA',
     description: 'Search company-wise coding questions by LeetCode id, title, company, or difficulty.',
     meta: 'Company lists',
-    subsections: ['Google', 'Arista', 'Amazon'],
+    subsections: ['Google', 'Arista', 'Amazon', 'Flipkart', 'Apple', 'Meesho', 'Intel', 'Nvidia', 'Salesforce'],
     contentTitle: 'DSA Problem Tracker',
-    contentDescription: 'Track company-wise LeetCode questions from Google, Arista, and Amazon. Common problems share one LeetCode id, so progress stays consistent across companies.',
+    contentDescription: 'Track company-wise LeetCode questions from Google, Arista, Amazon, Flipkart, Apple, Meesho, Intel, Nvidia, and Salesforce. Common problems share one LeetCode id, so progress stays consistent across companies.',
     totalItems: 1315,
     items: []
   },

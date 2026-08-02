@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-ro
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import SectionPage from './pages/SectionPage';
 import InterviewHistory from './pages/InterviewHistory';
 import WeaknessAnalytics from './pages/WeaknessAnalytics';
@@ -13,6 +14,7 @@ import './App.css';
 function App() {
   const isAuthenticated = !!localStorage.getItem('token');
   const [profile, setProfile] = useState(null);
+  const [authReady, setAuthReady] = useState(!isAuthenticated);
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountForm, setAccountForm] = useState({
     name: '',
@@ -29,7 +31,11 @@ function App() {
   });
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      setProfile(null);
+      setAuthReady(true);
+      return;
+    }
 
     const fetchProfile = async () => {
       try {
@@ -47,12 +53,19 @@ function App() {
             name: data.name || '',
             email: data.email || ''
           }));
+        } else {
+          localStorage.removeItem('token');
+          setProfile(null);
+          window.location.href = '/login';
         }
       } catch {
         setAccountError('Unable to load account details.');
+      } finally {
+        setAuthReady(true);
       }
     };
 
+    setAuthReady(false);
     fetchProfile();
   }, [isAuthenticated]);
 
@@ -109,6 +122,9 @@ function App() {
 
   return (
     <Router>
+      {!authReady ? (
+        <div className="loading-state app-loading-state">Loading account...</div>
+      ) : (
       <div className="App">
         <nav className="navbar">
           <div className="nav-brand">
@@ -135,6 +151,7 @@ function App() {
             {isAuthenticated && !liveInterview.active && (
               <>
                 <Link to="/dashboard">Dashboard</Link>
+                {profile?.role === 'admin' && <Link to="/admin">Admin</Link>}
                 <Link to="/resume">Resume</Link>
                 <Link to="/history">History</Link>
                 <Link to="/analytics">Analytics</Link>
@@ -219,6 +236,10 @@ function App() {
                 element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" />} 
               />
               <Route
+                path="/admin"
+                element={isAuthenticated ? (profile?.role === 'admin' ? <AdminDashboard /> : <Navigate to="/dashboard" />) : <Navigate to="/login" />}
+              />
+              <Route
                 path="/sections/:slug"
                 element={isAuthenticated ? <SectionPage /> : <Navigate to="/login" />}
               />
@@ -238,6 +259,7 @@ function App() {
           </main>
         </div>
       </div>
+      )}
     </Router>
   );
 }

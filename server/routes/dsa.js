@@ -1,17 +1,41 @@
 const express = require('express');
 const pool = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
+const { seedAllCompanies } = require('../scripts/importGoogleQuestions');
 
 const router = express.Router();
+
+let seedPromise = null;
+
+const ensureDsaSeeded = async () => {
+  if (!seedPromise) {
+    seedPromise = seedAllCompanies().catch((error) => {
+      seedPromise = null;
+      throw error;
+    });
+  }
+
+  return seedPromise;
+};
 
 const COMPANY_QUERIES = [
   { company: 'Google', tableName: 'google_questions' },
   { company: 'Arista', tableName: 'arista_questions' },
-  { company: 'Amazon', tableName: 'amazon_questions' }
+  { company: 'Amazon', tableName: 'amazon_questions' },
+  { company: 'Flipkart', tableName: 'flipkart_questions' },
+  { company: 'Apple', tableName: 'apple_questions' },
+  { company: 'Meesho', tableName: 'meesho_questions' },
+  { company: 'Intel', tableName: 'intel_questions' },
+  { company: 'Nvidia', tableName: 'nvidia_questions' },
+  { company: 'Salesforce', tableName: 'salesforce_questions' }
 ];
 
 router.get('/questions', authMiddleware, async (req, res) => {
   try {
+    await ensureDsaSeeded().catch((error) => {
+      console.warn(`DSA seed warmup failed: ${error.message}`);
+    });
+
     const companySelects = COMPANY_QUERIES.map(({ company, tableName }) => `
       SELECT
         '${company}' AS company,

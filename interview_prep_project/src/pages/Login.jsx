@@ -18,7 +18,7 @@ const Login = () => {
       
       if (res.ok) {
         localStorage.setItem('token', data.token);
-        window.location.href = '/dashboard'; 
+        window.location.href = data.profile?.role === 'admin' ? '/admin' : '/dashboard'; 
       } else {
         setError(data.message || 'Login failed');
       }

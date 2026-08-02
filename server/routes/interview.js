@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -190,6 +190,96 @@ const QUESTION_BANK = {
         { input: [3], expected: 3 },
         { input: [5], expected: 8 }
       ]
+    },
+    {
+      problemKey: 'sqrtx',
+      title: 'Sqrt(x)',
+      difficulty: 'Easy',
+      prompt: 'Given a non-negative integer x, return the integer part of its square root.',
+      description: 'Do not use a built-in power or square root function.',
+      constraints: ['0 <= x <= 2^31 - 1'],
+      keywords: ['math', 'binary', 'search', 'square', 'root'],
+      questionType: 'coding',
+      testCases: [
+        { input: [4], expected: 2 },
+        { input: [8], expected: 2 },
+        { input: [1], expected: 1 }
+      ]
+    },
+    {
+      problemKey: 'reverse-integer',
+      title: 'Reverse Integer',
+      difficulty: 'Medium',
+      prompt: 'Given a signed 32-bit integer x, return x with its digits reversed.',
+      description: 'If reversing x causes the value to go outside the signed 32-bit integer range, return 0.',
+      constraints: ['-2^31 <= x <= 2^31 - 1'],
+      keywords: ['math', 'digits', 'overflow', 'reverse'],
+      questionType: 'coding',
+      testCases: [
+        { input: [123], expected: 321 },
+        { input: [-123], expected: -321 },
+        { input: [1534236469], expected: 0 }
+      ]
+    },
+    {
+      problemKey: 'count-primes',
+      title: 'Count Primes',
+      difficulty: 'Medium',
+      prompt: 'Given an integer n, return the number of prime numbers that are strictly less than n.',
+      description: 'You can use a sieve or another efficient prime-counting approach.',
+      constraints: ['0 <= n <= 5 * 10^6'],
+      keywords: ['prime', 'sieve', 'math', 'count'],
+      questionType: 'coding',
+      testCases: [
+        { input: [10], expected: 4 },
+        { input: [0], expected: 0 },
+        { input: [20], expected: 8 }
+      ]
+    },
+    {
+      problemKey: 'add-digits',
+      title: 'Add Digits',
+      difficulty: 'Easy',
+      prompt: 'Given an integer num, repeatedly add all its digits until the result has only one digit.',
+      description: 'Return that single digit.',
+      constraints: ['0 <= num <= 2^31 - 1'],
+      keywords: ['math', 'digits', 'sum', 'loop'],
+      questionType: 'coding',
+      testCases: [
+        { input: [38], expected: 2 },
+        { input: [0], expected: 0 },
+        { input: [99], expected: 9 }
+      ]
+    },
+    {
+      problemKey: 'number-of-1-bits',
+      title: 'Number of 1 Bits',
+      difficulty: 'Easy',
+      prompt: 'Given a positive integer n, return the number of set bits in its binary representation.',
+      description: 'This is sometimes called the Hamming weight.',
+      constraints: ['0 <= n <= 2^31 - 1'],
+      keywords: ['bit', 'binary', 'count', 'hamming'],
+      questionType: 'coding',
+      testCases: [
+        { input: [11], expected: 3 },
+        { input: [128], expected: 1 },
+        { input: [2147483645], expected: 30 }
+      ]
+    },
+    {
+      problemKey: 'reverse-bits',
+      title: 'Reverse Bits',
+      difficulty: 'Easy',
+      prompt: 'Reverse bits of a given 32-bit unsigned integer.',
+      description: 'Treat the input as a 32-bit value.',
+      constraints: ['0 <= n <= 2^32 - 1'],
+      keywords: ['bit', 'reverse', 'binary', 'mask'],
+      questionType: 'coding',
+      testCases: [
+        { input: [43261596], expected: 964176192 },
+        { input: [0], expected: 0 },
+        { input: [1], expected: 2147483648 }
+      ]
     }
   ]
 };
@@ -216,6 +306,48 @@ const shuffle = (items) => {
   return copy;
 };
 
+const DSA_LEVEL_PREFERENCES = {
+  Beginner: ['Easy', 'Medium', 'Hard'],
+  Intermediate: ['Medium', 'Easy', 'Hard'],
+  Advanced: ['Hard', 'Medium', 'Easy']
+};
+
+const normalizeTopicPlan = (topicPlan) => {
+  if (!Array.isArray(topicPlan)) {
+    return [];
+  }
+
+  return topicPlan
+    .map((entry) => ({
+      subject: Object.keys(SUBJECT_LIMITS).includes(entry?.subject) ? entry.subject : null,
+      topic: String(entry?.topic || '').trim(),
+      count: Math.max(0, Math.min(10, Number(entry?.count || 0)))
+    }))
+    .filter((entry) => entry.subject && entry.topic && entry.count > 0);
+};
+
+const topicPlanBySubject = (topicPlan) => normalizeTopicPlan(topicPlan).reduce((accumulator, entry) => {
+  accumulator[entry.subject] = entry;
+  return accumulator;
+}, {});
+
+const getSubjectQuestionPool = (subject, level) => {
+  const questions = QUESTION_BANK[subject] || [];
+
+  if (subject !== 'DSA') {
+    return shuffle(questions);
+  }
+
+  const preferredDifficulties = DSA_LEVEL_PREFERENCES[level] || DSA_LEVEL_PREFERENCES.Intermediate;
+
+  return shuffle(questions).sort((left, right) => {
+    const leftRank = preferredDifficulties.indexOf(left.difficulty || 'Medium');
+    const rightRank = preferredDifficulties.indexOf(right.difficulty || 'Medium');
+
+    return (leftRank === -1 ? preferredDifficulties.length : leftRank) - (rightRank === -1 ? preferredDifficulties.length : rightRank);
+  });
+};
+
 const CODE_TEMPLATES = {
   javascript: {
     'two-sum': `function solution(nums, target) {
@@ -226,6 +358,24 @@ const CODE_TEMPLATES = {
 }`,
     'climbing-stairs': `function solution(n) {
   // Return the number of distinct ways to climb n stairs.
+}`,
+    'sqrtx': `function solution(x) {
+  // Return the integer part of the square root.
+}`,
+    'reverse-integer': `function solution(x) {
+  // Return the reversed integer, or 0 if it overflows.
+}`,
+    'count-primes': `function solution(n) {
+  // Return the count of primes smaller than n.
+}`,
+    'add-digits': `function solution(num) {
+  // Return the repeated digit sum until a single digit remains.
+}`,
+    'number-of-1-bits': `function solution(n) {
+  // Return the number of set bits in n.
+}`,
+    'reverse-bits': `function solution(n) {
+  // Return the 32-bit reversed value.
 }`
   },
   python: {
@@ -237,6 +387,24 @@ const CODE_TEMPLATES = {
     pass`,
     'climbing-stairs': `def solution(n):
     # Return the number of distinct ways to climb n stairs.
+    pass`,
+    'sqrtx': `def solution(x):
+    # Return the integer part of the square root.
+    pass`,
+    'reverse-integer': `def solution(x):
+    # Return the reversed integer, or 0 if it overflows.
+    pass`,
+    'count-primes': `def solution(n):
+    # Return the count of primes smaller than n.
+    pass`,
+    'add-digits': `def solution(num):
+    # Return the repeated digit sum until a single digit remains.
+    pass`,
+    'number-of-1-bits': `def solution(n):
+    # Return the number of set bits in n.
+    pass`,
+    'reverse-bits': `def solution(n):
+    # Return the 32-bit reversed value.
     pass`
   },
   cpp: {
@@ -257,6 +425,42 @@ using namespace std;
 
 int solution(int n) {
   // Return the number of distinct ways to climb n stairs.
+}`,
+    'sqrtx': `#include <bits/stdc++.h>
+using namespace std;
+
+int solution(int x) {
+  // Return the integer part of the square root.
+}`,
+    'reverse-integer': `#include <bits/stdc++.h>
+using namespace std;
+
+int solution(int x) {
+  // Return the reversed integer, or 0 if it overflows.
+}`,
+    'count-primes': `#include <bits/stdc++.h>
+using namespace std;
+
+int solution(int n) {
+  // Return the count of primes smaller than n.
+}`,
+    'add-digits': `#include <bits/stdc++.h>
+using namespace std;
+
+int solution(int num) {
+  // Return the repeated digit sum until a single digit remains.
+}`,
+    'number-of-1-bits': `#include <bits/stdc++.h>
+using namespace std;
+
+int solution(int n) {
+  // Return the number of set bits in n.
+}`,
+    'reverse-bits': `#include <bits/stdc++.h>
+using namespace std;
+
+int solution(int n) {
+  // Return the 32-bit reversed value.
 }`
   },
   c: {
@@ -270,6 +474,24 @@ int* solution(int* nums, int numsSize, int target, int* returnSize) {
 }`,
     'climbing-stairs': `int solution(int n) {
   // Return the number of distinct ways to climb n stairs.
+}`,
+    'sqrtx': `int solution(int x) {
+  // Return the integer part of the square root.
+}`,
+    'reverse-integer': `int solution(int x) {
+  // Return the reversed integer, or 0 if it overflows.
+}`,
+    'count-primes': `int solution(int n) {
+  // Return the count of primes smaller than n.
+}`,
+    'add-digits': `int solution(int num) {
+  // Return the repeated digit sum until a single digit remains.
+}`,
+    'number-of-1-bits': `int solution(int n) {
+  // Return the number of set bits in n.
+}`,
+    'reverse-bits': `int solution(int n) {
+  // Return the 32-bit reversed value.
 }`
   },
   java: {
@@ -288,6 +510,42 @@ int* solution(int* nums, int numsSize, int target, int* returnSize) {
     'climbing-stairs': `class Solution {
   public int solution(int n) {
     // Return the number of distinct ways to climb n stairs.
+    return 0;
+  }
+}`,
+    'sqrtx': `class Solution {
+  public int solution(int x) {
+    // Return the integer part of the square root.
+    return 0;
+  }
+}`,
+    'reverse-integer': `class Solution {
+  public int solution(int x) {
+    // Return the reversed integer, or 0 if it overflows.
+    return 0;
+  }
+}`,
+    'count-primes': `class Solution {
+  public int solution(int n) {
+    // Return the count of primes smaller than n.
+    return 0;
+  }
+}`,
+    'add-digits': `class Solution {
+  public int solution(int num) {
+    // Return the repeated digit sum until a single digit remains.
+    return 0;
+  }
+}`,
+    'number-of-1-bits': `class Solution {
+  public int solution(int n) {
+    // Return the number of set bits in n.
+    return 0;
+  }
+}`,
+    'reverse-bits': `class Solution {
+  public int solution(int n) {
+    // Return the 32-bit reversed value.
     return 0;
   }
 }`
@@ -626,15 +884,19 @@ const runCodeForQuestion = async ({ language, code, question }) => {
   }
 };
 
-const buildLocalQuestions = ({ level, counts }) => Object.keys(SUBJECT_LIMITS).flatMap((subject) => (
-  shuffle(QUESTION_BANK[subject]).slice(0, counts[subject]).map((question, index) => ({
+const buildLocalQuestions = ({ level, counts, topicPlan = [] }) => {
+  const topicsBySubject = topicPlanBySubject(topicPlan);
+
+  return Object.keys(SUBJECT_LIMITS).flatMap((subject) => (
+    getSubjectQuestionPool(subject, level).slice(0, counts[subject]).map((question, index) => ({
     id: `${subject}-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
     subject,
     subjectLabel: SUBJECT_LIMITS[subject].label,
     level,
+      topic: topicsBySubject[subject]?.topic || null,
     questionText: question.questionType === 'coding'
       ? question.prompt
-      : `${question.prompt} Answer at a ${level.toLowerCase()} interview depth.`,
+      : `${question.prompt}${topicsBySubject[subject]?.topic ? ` Focus on ${topicsBySubject[subject].topic}.` : ''} Answer at a ${level.toLowerCase()} interview depth.`,
     keywords: question.keywords,
     questionType: question.questionType || 'text',
     problemKey: question.problemKey || null,
@@ -643,19 +905,21 @@ const buildLocalQuestions = ({ level, counts }) => Object.keys(SUBJECT_LIMITS).f
     constraints: question.constraints || [],
     codeTemplates: question.problemKey ? Object.fromEntries(Object.keys(CODE_TEMPLATES).map((language) => [language, getStarterCode(question.problemKey, language)])) : {},
     starterCode: question.problemKey ? getStarterCode(question.problemKey, 'python') : '',
-    testCases: question.testCases || []
-  }))
-));
+      testCases: question.testCases || []
+    }))
+  ));
+};
 
-const buildLocalSubjectQuestions = ({ level, subject, count }) => (
-  shuffle(QUESTION_BANK[subject]).slice(0, count).map((question, index) => ({
+const buildLocalSubjectQuestions = ({ level, subject, count, topic = null }) => (
+  getSubjectQuestionPool(subject, level).slice(0, count).map((question, index) => ({
     id: `${subject}-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
     subject,
     subjectLabel: SUBJECT_LIMITS[subject].label,
     level,
+    topic,
     questionText: question.questionType === 'coding'
       ? question.prompt
-      : `${question.prompt} Answer at a ${level.toLowerCase()} interview depth.`,
+      : `${question.prompt}${topic ? ` Focus on ${topic}.` : ''} Answer at a ${level.toLowerCase()} interview depth.`,
     keywords: question.keywords,
     questionType: question.questionType || 'text',
     problemKey: question.problemKey || null,
@@ -699,10 +963,11 @@ const callOpenAI = async (messages, temperature = 0.4) => {
   return data.choices?.[0]?.message?.content || null;
 };
 
-const generateAiQuestions = async ({ level, counts }) => {
+const generateAiQuestions = async ({ level, counts, topicPlan = [] }) => {
+  const topicsBySubject = topicPlanBySubject(topicPlan);
   const requested = Object.entries(counts)
     .filter(([, count]) => count > 0)
-    .map(([subject, count]) => `${count} ${subject}`)
+    .map(([subject, count]) => `${count} ${subject}${topicsBySubject[subject]?.topic ? ` focused on ${topicsBySubject[subject].topic}` : ''}`)
     .join(', ');
 
   const content = await callOpenAI([
@@ -712,7 +977,7 @@ const generateAiQuestions = async ({ level, counts }) => {
     },
     {
       role: 'user',
-      content: `Create unique ${level} questions for these counts: ${requested}. Use subjects OOP, OS, DBMS, DSA. For DSA prefer coding questions in JavaScript. Return {"questions":[{"subject":"OOP","questionText":"...","keywords":["..."],"questionType":"text"}]}. Keywords must be short lowercase scoring concepts.`
+      content: `Create unique ${level} questions for these counts: ${requested}. Use subjects OOP, OS, DBMS, DSA. If a subject has a topic focus, make the question specifically about that topic. For DSA prefer coding questions in JavaScript. Return {"questions":[{"subject":"OOP","questionText":"...","keywords":["..."],"questionType":"text"}]}. Keywords must be short lowercase scoring concepts.`
     }
   ]);
 
@@ -728,6 +993,7 @@ const generateAiQuestions = async ({ level, counts }) => {
       subject: question.subject,
       subjectLabel: SUBJECT_LIMITS[question.subject].label,
       level,
+      topic: topicsBySubject[question.subject]?.topic || null,
       questionText: question.questionText,
       keywords: Array.isArray(question.keywords) ? question.keywords : [],
       questionType: question.questionType === 'coding' ? 'coding' : 'text',
@@ -1131,10 +1397,12 @@ router.post('/start', authMiddleware, async (req, res) => {
   const level = LEVELS.includes(req.body.level) ? req.body.level : null;
   const interviewType = INTERVIEW_TYPES.includes(req.body.interviewType) ? req.body.interviewType : 'Core Subjects';
   const resumeQuestionCount = Math.max(1, Math.min(10, Number(req.body.resumeQuestionCount || 3)));
+  const topicPlan = normalizeTopicPlan(req.body.topicPlan);
   const counts = {};
 
   ['OOP', 'OS', 'DBMS', 'DSA'].forEach((subject) => {
-    counts[subject] = clampCount(req.body.counts?.[subject] ?? 0, subject);
+    const topicEntry = topicPlan.find((entry) => entry.subject === subject);
+    counts[subject] = topicEntry ? topicEntry.count : clampCount(req.body.counts?.[subject] ?? 0, subject);
   });
   counts.RESUME = interviewType === 'Resume-Based'
     ? resumeQuestionCount
@@ -1179,16 +1447,16 @@ router.post('/start', authMiddleware, async (req, res) => {
 
     if (coreQuestionCount > 0 && interviewType !== 'Resume-Based') {
       try {
-        questions = await generateAiQuestions({ level, counts: coreCounts });
+        questions = await generateAiQuestions({ level, counts: coreCounts, topicPlan });
       } catch (err) {
         console.error(`AI question generation failed: ${err.message}`);
       }
     }
 
     if (!questions || questions.length !== coreQuestionCount) {
-      questions = buildLocalQuestions({ level, counts: coreCounts });
+        questions = buildLocalQuestions({ level, counts: coreCounts, topicPlan });
     } else if (coreCounts.DSA > 0) {
-      const localDsaQuestions = buildLocalSubjectQuestions({ level, subject: 'DSA', count: coreCounts.DSA });
+        const localDsaQuestions = buildLocalSubjectQuestions({ level, subject: 'DSA', count: coreCounts.DSA, topic: topicPlanBySubject(topicPlan).DSA?.topic || null });
       questions = [
         ...questions.filter((question) => question.subject !== 'DSA'),
         ...localDsaQuestions
@@ -1257,6 +1525,7 @@ router.post('/start', authMiddleware, async (req, res) => {
       level,
       interviewType,
       counts,
+      topicPlan,
       currentIndex: 0,
       questions: persistedQuestions,
       answers: [],
@@ -1732,3 +2001,4 @@ router.post('/analytics', authMiddleware, async (req, res) => {
 });
 
 module.exports = router;
+

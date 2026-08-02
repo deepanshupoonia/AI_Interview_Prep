@@ -33,12 +33,12 @@ router.post('/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     const newUser = await pool.query(
-      'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email, created_at',
-      [name, email, passwordHash]
+      'INSERT INTO users (name, email, password_hash, role, status) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, role, status, created_at',
+      [name, email, passwordHash, 'student', 'active']
     );
 
     const user = newUser.rows[0];
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     res.status(201).json({ token, profile: user });
   } catch (err) {
@@ -62,13 +62,16 @@ router.post('/login', async (req, res) => {
     }
 
     const user = userResult.rows[0];
+    if (user.status !== 'active') {
+      return res.status(403).json({ message: 'Account is inactive.' });
+    }
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    const profile = { id: user.id, name: user.name, email: user.email, created_at: user.created_at };
+    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const profile = { id: user.id, name: user.name, email: user.email, role: user.role, created_at: user.created_at };
 
     res.json({ token, profile });
   } catch (err) {
@@ -80,7 +83,7 @@ router.post('/login', async (req, res) => {
 // @route   GET /api/auth/profile
 router.get('/profile', authMiddleware, async (req, res) => {
   try {
-    const userResult = await pool.query('SELECT id, name, email, created_at FROM users WHERE id = $1', [req.user.id]);
+    const userResult = await pool.query('SELECT id, name, email, role, status, created_at FROM users WHERE id = $1', [req.user.id]);
     if (userResult.rows.length === 0) return res.status(404).json({ message: 'User not found.' });
     const user = userResult.rows[0];
 
@@ -106,6 +109,7 @@ router.get('/profile', authMiddleware, async (req, res) => {
     const highest_category = categoryStats.rows.length > 0 ? categoryStats.rows[0].type : null;
 
     res.json({
+      role: user.role,
       name: user.name,
       email: user.email,
       created_at: user.created_at,
@@ -142,6 +146,9 @@ router.put('/profile', authMiddleware, async (req, res) => {
     if (userResult.rows.length === 0) return res.status(404).json({ message: 'User not found' });
 
     const user = userResult.rows[0];
+    if (user.status !== 'active') {
+      return res.status(403).json({ message: 'Account is inactive.' });
+    }
     const sensitiveChange = (email && email !== user.email) || Boolean(newPassword);
 
     if (sensitiveChange) {
@@ -165,7 +172,7 @@ router.put('/profile', authMiddleware, async (req, res) => {
     const nextPasswordHash = newPassword ? await bcrypt.hash(newPassword, 10) : user.password_hash;
 
     const result = await pool.query(
-      'UPDATE users SET name = $1, email = $2, password_hash = $3 WHERE id = $4 RETURNING id, name, email, created_at',
+      'UPDATE users SET name = $1, email = $2, password_hash = $3 WHERE id = $4 RETURNING id, name, email, role, created_at',
       [nextName, nextEmail, nextPasswordHash, req.user.id]
     );
 
